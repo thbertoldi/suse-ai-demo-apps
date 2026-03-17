@@ -52,7 +52,7 @@ A single `proto/demo.proto` defines the following services and messages:
 ```protobuf
 syntax = "proto3";
 package demo;
-option go_package = "github.com/suse/suse-ai-demo-apps/proto/demo";
+option go_package = "github.com/suse/suse-ai-demo-apps/gateway/pb";
 
 // Gateway-facing API (called by traffic generator and external clients)
 service DemoService {
