@@ -1,0 +1,33 @@
+{{- if .Values.trafficGen.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: traffic-gen
+  labels:
+    app: traffic-gen
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: traffic-gen
+  template:
+    metadata:
+      labels:
+        app: traffic-gen
+    spec:
+      containers:
+        - name: traffic-gen
+          image: "{{ .Values.trafficGen.image.repository }}:{{ .Values.trafficGen.image.tag }}"
+          imagePullPolicy: {{ .Values.trafficGen.image.pullPolicy }}
+          env:
+            - name: GATEWAY_ADDR
+              value: {{ .Values.trafficGen.gatewayAddr | quote }}
+            - name: INTERVAL_SECONDS
+              value: {{ .Values.trafficGen.intervalSeconds | quote }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.otel.exporterEndpoint | quote }}
+            - name: OTEL_SERVICE_NAME
+              value: "traffic-gen"
+          resources:
+            {{- toYaml .Values.trafficGen.resources | nindent 12 }}
+{{- end }}

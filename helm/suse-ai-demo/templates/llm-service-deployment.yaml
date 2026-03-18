@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: llm-service
+  labels:
+    app: llm-service
+spec:
+  replicas: {{ .Values.llmService.replicas }}
+  selector:
+    matchLabels:
+      app: llm-service
+  template:
+    metadata:
+      labels:
+        app: llm-service
+    spec:
+      containers:
+        - name: llm-service
+          image: "{{ .Values.llmService.image.repository }}:{{ .Values.llmService.image.tag }}"
+          imagePullPolicy: {{ .Values.llmService.image.pullPolicy }}
+          ports:
+            - containerPort: 50053
+              protocol: TCP
+          env:
+            - name: GRPC_LISTEN_ADDR
+              value: "[::]:50053"
+            - name: LLM_BASE_URL
+              value: {{ .Values.llmService.llm.baseUrl | quote }}
+            - name: LLM_MODEL
+              value: {{ .Values.llmService.llm.model | quote }}
+            - name: LLM_PROVIDER
+              value: {{ .Values.llmService.llm.provider | quote }}
+            - name: ENABLE_OTEL_CONTENT_EVENTS
+              value: {{ .Values.llmService.enableContentEvents | quote }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.otel.exporterEndpoint | quote }}
+            - name: OTEL_SERVICE_NAME
+              value: "llm-service"
+          readinessProbe:
+            grpc:
+              port: 50053
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 50053
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.llmService.resources | nindent 12 }}

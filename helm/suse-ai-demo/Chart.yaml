@@ -1,0 +1,6 @@
+apiVersion: v2
+name: suse-ai-demo
+description: SUSE AI Demo Apps - RAG pipeline with OpenTelemetry GenAI instrumentation
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

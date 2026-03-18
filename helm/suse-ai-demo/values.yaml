@@ -1,0 +1,79 @@
+gateway:
+  image:
+    repository: ghcr.io/suse/suse-ai-demo-gateway
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicas: 1
+  ragServiceAddr: rag-service:50052
+  llmServiceAddr: llm-service:50053
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+ragService:
+  image:
+    repository: ghcr.io/suse/suse-ai-demo-rag-service
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicas: 1
+  llm:
+    baseUrl: http://ollama:11434/v1
+    model: llama3
+    provider: ollama
+  embedding:
+    baseUrl: http://ollama:11434/v1
+    model: nomic-embed-text
+  vectorDb:
+    type: qdrant
+    url: http://qdrant:6333
+    collection: demo-docs
+  enableContentEvents: "false"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+llmService:
+  image:
+    repository: ghcr.io/suse/suse-ai-demo-llm-service
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicas: 1
+  llm:
+    baseUrl: http://vllm:8000/v1
+    model: llama3
+    provider: vllm
+  enableContentEvents: "false"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+trafficGen:
+  image:
+    repository: ghcr.io/suse/suse-ai-demo-traffic-gen
+    tag: latest
+    pullPolicy: IfNotPresent
+  enabled: true
+  gatewayAddr: gateway:50051
+  intervalSeconds: "5"
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+otel:
+  exporterEndpoint: http://otel-collector:4317

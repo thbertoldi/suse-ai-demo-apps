@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rag-service
+  labels:
+    app: rag-service
+spec:
+  replicas: {{ .Values.ragService.replicas }}
+  selector:
+    matchLabels:
+      app: rag-service
+  template:
+    metadata:
+      labels:
+        app: rag-service
+    spec:
+      containers:
+        - name: rag-service
+          image: "{{ .Values.ragService.image.repository }}:{{ .Values.ragService.image.tag }}"
+          imagePullPolicy: {{ .Values.ragService.image.pullPolicy }}
+          ports:
+            - containerPort: 50052
+              protocol: TCP
+          env:
+            - name: GRPC_LISTEN_ADDR
+              value: "[::]:50052"
+            - name: LLM_BASE_URL
+              value: {{ .Values.ragService.llm.baseUrl | quote }}
+            - name: LLM_MODEL
+              value: {{ .Values.ragService.llm.model | quote }}
+            - name: LLM_PROVIDER
+              value: {{ .Values.ragService.llm.provider | quote }}
+            - name: EMBEDDING_BASE_URL
+              value: {{ .Values.ragService.embedding.baseUrl | quote }}
+            - name: EMBEDDING_MODEL
+              value: {{ .Values.ragService.embedding.model | quote }}
+            - name: VECTOR_DB_TYPE
+              value: {{ .Values.ragService.vectorDb.type | quote }}
+            - name: VECTOR_DB_URL
+              value: {{ .Values.ragService.vectorDb.url | quote }}
+            - name: VECTOR_DB_COLLECTION
+              value: {{ .Values.ragService.vectorDb.collection | quote }}
+            - name: ENABLE_OTEL_CONTENT_EVENTS
+              value: {{ .Values.ragService.enableContentEvents | quote }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.otel.exporterEndpoint | quote }}
+            - name: OTEL_SERVICE_NAME
+              value: "rag-service"
+          readinessProbe:
+            grpc:
+              port: 50052
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 50052
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.ragService.resources | nindent 12 }}
