@@ -1,0 +1,56 @@
+syntax = "proto3";
+package demo;
+option go_package = "github.com/suse/suse-ai-demo-apps/gateway/pb";
+
+service DemoService {
+  rpc Query(QueryRequest) returns (QueryResponse);
+  rpc Chat(ChatRequest) returns (ChatResponse);
+}
+
+service RAGService {
+  rpc Retrieve(RetrieveRequest) returns (RetrieveResponse);
+}
+
+service LLMService {
+  rpc Generate(GenerateRequest) returns (GenerateResponse);
+}
+
+message QueryRequest {
+  string query = 1;
+  int32 top_k = 2;
+}
+
+message QueryResponse {
+  string answer = 1;
+  repeated string sources = 2;
+  string model = 3;
+}
+
+message ChatRequest {
+  string message = 1;
+}
+
+message ChatResponse {
+  string reply = 1;
+  string model = 2;
+}
+
+message RetrieveRequest {
+  string query = 1;
+  int32 top_k = 2;
+}
+
+message RetrieveResponse {
+  string answer = 1;
+  repeated string sources = 2;
+  string model = 3;
+}
+
+message GenerateRequest {
+  string prompt = 1;
+}
+
+message GenerateResponse {
+  string text = 1;
+  string model = 2;
+}
