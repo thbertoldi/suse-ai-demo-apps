@@ -1,6 +1,6 @@
-grpcio==1.68.1
-grpcio-tools==1.68.1
-protobuf==5.29.2
+grpcio==1.78.0
+grpcio-tools==1.78.0
+protobuf==6.31.1
 opentelemetry-api==1.29.0
 opentelemetry-sdk==1.29.0
 opentelemetry-exporter-otlp-proto-grpc==1.29.0
