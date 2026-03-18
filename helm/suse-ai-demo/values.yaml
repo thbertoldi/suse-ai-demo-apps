@@ -1,8 +1,8 @@
 gateway:
   image:
-    repository: ghcr.io/suse/suse-ai-demo-gateway
+    repository: ghcr.io/thbertoldi/suse-ai-demo-gateway
     tag: latest
-    pullPolicy: IfNotPresent
+    pullPolicy: Always
   replicas: 1
   ragServiceAddr: rag-service:50052
   llmServiceAddr: llm-service:50053
@@ -16,20 +16,20 @@ gateway:
 
 ragService:
   image:
-    repository: ghcr.io/suse/suse-ai-demo-rag-service
+    repository: ghcr.io/thbertoldi/suse-ai-demo-rag-service
     tag: latest
-    pullPolicy: IfNotPresent
+    pullPolicy: Always
   replicas: 1
   llm:
-    baseUrl: http://ollama:11434/v1
+    baseUrl: http://ollama.suse-private-ai.svc.cluster.local:11434
     model: llama3
     provider: ollama
   embedding:
-    baseUrl: http://ollama:11434/v1
+    baseUrl: http://ollama.suse-private-ai.svc.cluster.local:11434
     model: nomic-embed-text
   vectorDb:
     type: qdrant
-    url: http://qdrant:6333
+    url: http://qdrant.suse-private-ai.svc.cluster.local:6333
     collection: demo-docs
   enableContentEvents: "false"
   resources:
@@ -42,12 +42,12 @@ ragService:
 
 llmService:
   image:
-    repository: ghcr.io/suse/suse-ai-demo-llm-service
+    repository: ghcr.io/thbertoldi/suse-ai-demo-llm-service
     tag: latest
-    pullPolicy: IfNotPresent
+    pullPolicy: Always
   replicas: 1
   llm:
-    baseUrl: http://vllm:8000/v1
+    baseUrl: http://vllm-router-service.suse-private-ai.svc.cluster.local:80/v1
     model: llama3
     provider: vllm
   enableContentEvents: "false"
@@ -61,9 +61,9 @@ llmService:
 
 trafficGen:
   image:
-    repository: ghcr.io/suse/suse-ai-demo-traffic-gen
+    repository: ghcr.io/thbertoldi/suse-ai-demo-traffic-gen
     tag: latest
-    pullPolicy: IfNotPresent
+    pullPolicy: Always
   enabled: true
   gatewayAddr: gateway:50051
   intervalSeconds: "5"
@@ -76,4 +76,4 @@ trafficGen:
       memory: 128Mi
 
 otel:
-  exporterEndpoint: http://otel-collector:4317
+  exporterEndpoint: http://opentelemetry-collector.observability.svc.cluster.local:4317gateway:
