@@ -76,4 +76,4 @@ trafficGen:
       memory: 128Mi
 
 otel:
-  exporterEndpoint: http://opentelemetry-collector.observability.svc.cluster.local:4317gateway:
+  exporterEndpoint: http://opentelemetry-collector.observability.svc.cluster.local:4317
