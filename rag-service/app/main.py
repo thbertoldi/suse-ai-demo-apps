@@ -31,7 +31,7 @@ def serve():
     try:
         seed_if_needed(
             store=store,
-            embedding_base_url=os.environ.get("EMBEDDING_BASE_URL", "http://ollama:11434/v1"),
+            embedding_base_url=os.environ.get("EMBEDDING_BASE_URL", "http://ollama:11434"),
             embedding_model=os.environ.get("EMBEDDING_MODEL", "nomic-embed-text"),
             provider=os.environ.get("LLM_PROVIDER", "ollama"),
         )

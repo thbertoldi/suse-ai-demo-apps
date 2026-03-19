@@ -17,7 +17,7 @@ class RAGServiceServicer(demo_pb2_grpc.RAGServiceServicer):
         self._llm_base_url = os.environ.get("LLM_BASE_URL", "http://ollama:11434/v1")
         self._llm_model = os.environ.get("LLM_MODEL", "llama3")
         self._llm_provider = os.environ.get("LLM_PROVIDER", "ollama")
-        self._embedding_base_url = os.environ.get("EMBEDDING_BASE_URL", "http://ollama:11434/v1")
+        self._embedding_base_url = os.environ.get("EMBEDDING_BASE_URL", "http://ollama:11434")
         self._embedding_model = os.environ.get("EMBEDDING_MODEL", "nomic-embed-text")
 
     def Retrieve(self, request, context):

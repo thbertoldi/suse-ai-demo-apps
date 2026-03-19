@@ -36,7 +36,7 @@ def embed(
         start_time = time.monotonic()
         try:
             response = requests.post(
-                f"{base_url}/embeddings",
+                f"{base_url}/api/embed",
                 json={"model": model, "input": text},
                 timeout=60,
             )
@@ -58,13 +58,12 @@ def embed(
             }
             operation_duration_histogram.record(duration, attributes=common_attrs)
 
-        usage = data.get("usage", {})
-        input_tokens = usage.get("prompt_tokens", 0)
+        input_tokens = data.get("prompt_eval_count", 0)
         span.set_attribute("gen_ai.usage.input_tokens", input_tokens)
 
         token_usage_histogram.record(input_tokens, attributes={
             **common_attrs, "gen_ai.token.type": "input",
         })
 
-        embedding = data["data"][0]["embedding"]
+        embedding = data["embeddings"][0]
         return embedding
