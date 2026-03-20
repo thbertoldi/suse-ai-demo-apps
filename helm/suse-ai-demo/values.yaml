@@ -31,6 +31,8 @@ ragService:
     type: qdrant
     url: http://qdrant.suse-private-ai.svc.cluster.local:6333
     collection: demo-docs
+    username: ""
+    password: ""
   enableContentEvents: "false"
   resources:
     requests:

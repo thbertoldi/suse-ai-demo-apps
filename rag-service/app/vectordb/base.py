@@ -12,9 +12,11 @@ class Document:
 
 
 class VectorStore(ABC):
-    def __init__(self, url: str, collection_name: str):
+    def __init__(self, url: str, collection_name: str, username: str = "", password: str = ""):
         self._url = url
         self._collection_name = collection_name
+        self._username = username
+        self._password = password
 
     @abstractmethod
     def search(self, query_embedding: list[float], top_k: int = 3) -> list[Document]:

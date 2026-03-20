@@ -40,6 +40,14 @@ spec:
               value: {{ .Values.ragService.vectorDb.url | quote }}
             - name: VECTOR_DB_COLLECTION
               value: {{ .Values.ragService.vectorDb.collection | quote }}
+            {{- if .Values.ragService.vectorDb.username }}
+            - name: VECTOR_DB_USERNAME
+              value: {{ .Values.ragService.vectorDb.username | quote }}
+            {{- end }}
+            {{- if .Values.ragService.vectorDb.password }}
+            - name: VECTOR_DB_PASSWORD
+              value: {{ .Values.ragService.vectorDb.password | quote }}
+            {{- end }}
             - name: ENABLE_OTEL_CONTENT_EVENTS
               value: {{ .Values.ragService.enableContentEvents | quote }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT

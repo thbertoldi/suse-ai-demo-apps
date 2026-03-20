@@ -26,6 +26,8 @@ def serve():
         db_type=os.environ.get("VECTOR_DB_TYPE", "qdrant"),
         url=os.environ.get("VECTOR_DB_URL", "http://qdrant:6333"),
         collection_name=os.environ.get("VECTOR_DB_COLLECTION", "demo-docs"),
+        username=os.environ.get("VECTOR_DB_USERNAME", ""),
+        password=os.environ.get("VECTOR_DB_PASSWORD", ""),
     )
 
     try:
