@@ -1,6 +1,5 @@
 langgraph==0.4.8
 langchain-openai==0.3.18
-langchain-core==0.3.51
 simpleeval==1.0.3
 grpcio==1.78.0
 grpcio-tools==1.78.0
