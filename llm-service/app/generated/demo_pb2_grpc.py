@@ -44,6 +44,11 @@ class DemoServiceStub(object):
                 request_serializer=demo__pb2.ChatRequest.SerializeToString,
                 response_deserializer=demo__pb2.ChatResponse.FromString,
                 _registered_method=True)
+        self.AgentChat = channel.unary_unary(
+                '/demo.DemoService/AgentChat',
+                request_serializer=demo__pb2.AgentChatRequest.SerializeToString,
+                response_deserializer=demo__pb2.AgentChatResponse.FromString,
+                _registered_method=True)
 
 
 class DemoServiceServicer(object):
@@ -61,6 +66,12 @@ class DemoServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def AgentChat(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_DemoServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -73,6 +84,11 @@ def add_DemoServiceServicer_to_server(servicer, server):
                     servicer.Chat,
                     request_deserializer=demo__pb2.ChatRequest.FromString,
                     response_serializer=demo__pb2.ChatResponse.SerializeToString,
+            ),
+            'AgentChat': grpc.unary_unary_rpc_method_handler(
+                    servicer.AgentChat,
+                    request_deserializer=demo__pb2.AgentChatRequest.FromString,
+                    response_serializer=demo__pb2.AgentChatResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -129,6 +145,33 @@ class DemoService(object):
             '/demo.DemoService/Chat',
             demo__pb2.ChatRequest.SerializeToString,
             demo__pb2.ChatResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def AgentChat(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/demo.DemoService/AgentChat',
+            demo__pb2.AgentChatRequest.SerializeToString,
+            demo__pb2.AgentChatResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -273,6 +316,78 @@ class LLMService(object):
             '/demo.LLMService/Generate',
             demo__pb2.GenerateRequest.SerializeToString,
             demo__pb2.GenerateResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+
+class AgentServiceStub(object):
+    """Missing associated documentation comment in .proto file."""
+
+    def __init__(self, channel):
+        """Constructor.
+
+        Args:
+            channel: A grpc.Channel.
+        """
+        self.Run = channel.unary_unary(
+                '/demo.AgentService/Run',
+                request_serializer=demo__pb2.AgentRequest.SerializeToString,
+                response_deserializer=demo__pb2.AgentResponse.FromString,
+                _registered_method=True)
+
+
+class AgentServiceServicer(object):
+    """Missing associated documentation comment in .proto file."""
+
+    def Run(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+
+def add_AgentServiceServicer_to_server(servicer, server):
+    rpc_method_handlers = {
+            'Run': grpc.unary_unary_rpc_method_handler(
+                    servicer.Run,
+                    request_deserializer=demo__pb2.AgentRequest.FromString,
+                    response_serializer=demo__pb2.AgentResponse.SerializeToString,
+            ),
+    }
+    generic_handler = grpc.method_handlers_generic_handler(
+            'demo.AgentService', rpc_method_handlers)
+    server.add_generic_rpc_handlers((generic_handler,))
+    server.add_registered_method_handlers('demo.AgentService', rpc_method_handlers)
+
+
+ # This class is part of an EXPERIMENTAL API.
+class AgentService(object):
+    """Missing associated documentation comment in .proto file."""
+
+    @staticmethod
+    def Run(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/demo.AgentService/Run',
+            demo__pb2.AgentRequest.SerializeToString,
+            demo__pb2.AgentResponse.FromString,
             options,
             channel_credentials,
             insecure,
