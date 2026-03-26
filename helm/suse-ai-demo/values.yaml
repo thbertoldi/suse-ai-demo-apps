@@ -6,6 +6,7 @@ gateway:
   replicas: 1
   ragServiceAddr: rag-service:50052
   llmServiceAddr: llm-service:50053
+  agentServiceAddr: agent-service:50054
   resources:
     requests:
       cpu: 100m
@@ -60,6 +61,28 @@ llmService:
     limits:
       cpu: 500m
       memory: 256Mi
+
+agentService:
+  image:
+    repository: ghcr.io/thbertoldi/suse-ai-demo-agent-service
+    tag: latest
+    pullPolicy: Always
+  replicas: 1
+  llm:
+    baseUrl: http://vllm-router-service.suse-private-ai.svc.cluster.local:80/v1
+    model: llama3
+    provider: vllm
+  ragServiceAddr: rag-service:50052
+  agentName: demo-agent
+  maxIterations: "5"
+  enableContentEvents: "false"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
 
 trafficGen:
   image:

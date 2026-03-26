@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: agent-service
+  labels:
+    app: agent-service
+spec:
+  replicas: {{ .Values.agentService.replicas }}
+  selector:
+    matchLabels:
+      app: agent-service
+  template:
+    metadata:
+      labels:
+        app: agent-service
+    spec:
+      containers:
+        - name: agent-service
+          image: "{{ .Values.agentService.image.repository }}:{{ .Values.agentService.image.tag }}"
+          imagePullPolicy: {{ .Values.agentService.image.pullPolicy }}
+          ports:
+            - containerPort: 50054
+              protocol: TCP
+          env:
+            - name: GRPC_LISTEN_ADDR
+              value: "[::]:50054"
+            - name: LLM_BASE_URL
+              value: {{ .Values.agentService.llm.baseUrl | quote }}
+            - name: LLM_MODEL
+              value: {{ .Values.agentService.llm.model | quote }}
+            - name: LLM_PROVIDER
+              value: {{ .Values.agentService.llm.provider | quote }}
+            - name: RAG_SERVICE_ADDR
+              value: {{ .Values.agentService.ragServiceAddr | quote }}
+            - name: AGENT_NAME
+              value: {{ .Values.agentService.agentName | quote }}
+            - name: AGENT_MAX_ITERATIONS
+              value: {{ .Values.agentService.maxIterations | quote }}
+            - name: ENABLE_OTEL_CONTENT_EVENTS
+              value: {{ .Values.agentService.enableContentEvents | quote }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.otel.exporterEndpoint | quote }}
+            - name: OTEL_SERVICE_NAME
+              value: "agent-service"
+          readinessProbe:
+            grpc:
+              port: 50054
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 50054
+            initialDelaySeconds: 5
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.agentService.resources | nindent 12 }}
