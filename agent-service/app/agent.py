@@ -43,6 +43,8 @@ def create_agent(rag_channel: grpc.Channel):
         max_tokens=512,
     )
 
+    # These stubs define the tool schemas for LLM tool binding via bind_tools().
+    # Actual execution is dispatched in tool_node() to the real implementations in tools.py.
     @langchain_tool
     def search_docs(query: str) -> str:
         """Search the document knowledge base for relevant information on a topic."""
@@ -79,8 +81,16 @@ def create_agent(rag_channel: grpc.Channel):
                 "gen_ai.operation.name": "chat",
                 "gen_ai.request.model": llm_model,
                 "gen_ai.provider.name": llm_provider,
+                "gen_ai.request.temperature": 0.7,
+                "gen_ai.request.max_tokens": 512,
             },
         ) as span:
+            if ENABLE_CONTENT_EVENTS:
+                input_msgs = [{"role": m.type, "content": m.content} for m in messages if hasattr(m, "content")]
+                span.add_event("gen_ai.input.messages", attributes={
+                    "gen_ai.input.messages": json.dumps(input_msgs),
+                })
+
             try:
                 response = llm_with_tools.invoke(messages)
             except Exception as e:
@@ -104,10 +114,14 @@ def create_agent(rag_channel: grpc.Channel):
                 finish_reason = meta.get("finish_reason", "")
                 model_name = meta.get("model_name", meta.get("model", llm_model))
 
+                response_id = meta.get("id", "")
+
                 span.set_attribute("gen_ai.response.model", model_name)
                 span.set_attribute("gen_ai.usage.input_tokens", input_tokens)
                 span.set_attribute("gen_ai.usage.output_tokens", output_tokens)
                 span.set_attribute("gen_ai.response.finish_reasons", [finish_reason])
+                if response_id:
+                    span.set_attribute("gen_ai.response.id", response_id)
 
                 token_usage_histogram.record(input_tokens, attributes={
                     **common_attrs, "gen_ai.token.type": "input",
@@ -117,10 +131,6 @@ def create_agent(rag_channel: grpc.Channel):
                 })
 
             if ENABLE_CONTENT_EVENTS:
-                input_msgs = [{"role": m.type, "content": m.content} for m in messages if hasattr(m, "content")]
-                span.add_event("gen_ai.input.messages", attributes={
-                    "gen_ai.input.messages": json.dumps(input_msgs),
-                })
                 span.add_event("gen_ai.output.messages", attributes={
                     "gen_ai.output.messages": json.dumps([{"role": "assistant", "content": response.content}]),
                 })
@@ -142,7 +152,6 @@ def create_agent(rag_channel: grpc.Channel):
                 result = agent_tools.search_docs(
                     query=tool_args.get("query", ""),
                     rag_channel=rag_channel,
-                    top_k=tool_args.get("top_k", 3),
                     tool_call_id=tool_call_id,
                 )
             elif tool_name == "calculate":

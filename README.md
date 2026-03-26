@@ -114,7 +114,7 @@ cd proto
 make all
 ```
 
-This regenerates Go stubs in `gateway/pb/` and Python stubs in `{rag,llm}-service/app/generated/` and `traffic-gen/generated/`.
+This regenerates Go stubs in `gateway/pb/` and Python stubs in `{rag,llm,agent}-service/app/generated/` and `traffic-gen/generated/`.
 
 ## Running Locally
 
@@ -167,7 +167,7 @@ python -m app.main
 
 ## Deploying with Helm
 
-The Helm chart deploys the 4 services we build. External dependencies (Qdrant, Ollama, vLLM, OTel Collector) must already be running in the cluster.
+The Helm chart deploys the 5 services we build. External dependencies (Qdrant, Ollama, vLLM, OTel Collector) must already be running in the cluster.
 
 ```bash
 helm install demo ./helm/suse-ai-demo \

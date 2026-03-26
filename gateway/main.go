@@ -169,7 +169,6 @@ func main() {
 	healthpb.RegisterHealthServer(srv, healthSrv)
 	healthSrv.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
 	healthSrv.SetServingStatus("demo.DemoService", healthpb.HealthCheckResponse_SERVING)
-	healthSrv.SetServingStatus("demo.AgentService", healthpb.HealthCheckResponse_SERVING)
 
 	lis, err := net.Listen("tcp", listenAddr)
 	if err != nil {
