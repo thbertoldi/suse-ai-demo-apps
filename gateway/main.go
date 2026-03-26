@@ -68,8 +68,9 @@ func setupOTel(ctx context.Context, serviceName string) (func(), error) {
 
 type gatewayServer struct {
 	pb.UnimplementedDemoServiceServer
-	ragConn *grpc.ClientConn
-	llmConn *grpc.ClientConn
+	ragConn   *grpc.ClientConn
+	llmConn   *grpc.ClientConn
+	agentConn *grpc.ClientConn
 }
 
 func (s *gatewayServer) Query(ctx context.Context, req *pb.QueryRequest) (*pb.QueryResponse, error) {
@@ -99,6 +100,21 @@ func (s *gatewayServer) Chat(ctx context.Context, req *pb.ChatRequest) (*pb.Chat
 	return &pb.ChatResponse{
 		Reply: resp.Text,
 		Model: resp.Model,
+	}, nil
+}
+
+func (s *gatewayServer) AgentChat(ctx context.Context, req *pb.AgentChatRequest) (*pb.AgentChatResponse, error) {
+	client := pb.NewAgentServiceClient(s.agentConn)
+	resp, err := client.Run(ctx, &pb.AgentRequest{
+		Message: req.Message,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &pb.AgentChatResponse{
+		Reply:         resp.Reply,
+		Model:         resp.Model,
+		ToolCallsMade: resp.ToolCallsMade,
 	}, nil
 }
 
@@ -134,14 +150,26 @@ func main() {
 	}
 	defer llmConn.Close()
 
+	agentAddr := envOrDefault("AGENT_SERVICE_ADDR", "agent-service:50054")
+
+	agentConn, err := grpc.NewClient(agentAddr,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
+	)
+	if err != nil {
+		log.Fatalf("failed to connect to Agent service: %v", err)
+	}
+	defer agentConn.Close()
+
 	srv := grpc.NewServer(grpc.StatsHandler(otelgrpc.NewServerHandler()))
 
-	pb.RegisterDemoServiceServer(srv, &gatewayServer{ragConn: ragConn, llmConn: llmConn})
+	pb.RegisterDemoServiceServer(srv, &gatewayServer{ragConn: ragConn, llmConn: llmConn, agentConn: agentConn})
 
 	healthSrv := healthgrpc.NewServer()
 	healthpb.RegisterHealthServer(srv, healthSrv)
 	healthSrv.SetServingStatus("", healthpb.HealthCheckResponse_SERVING)
 	healthSrv.SetServingStatus("demo.DemoService", healthpb.HealthCheckResponse_SERVING)
+	healthSrv.SetServingStatus("demo.AgentService", healthpb.HealthCheckResponse_SERVING)
 
 	lis, err := net.Listen("tcp", listenAddr)
 	if err != nil {
