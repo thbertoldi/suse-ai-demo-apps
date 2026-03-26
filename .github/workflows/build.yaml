@@ -30,6 +30,9 @@ jobs:
           - service: traffic-gen
             context: ./traffic-gen
             image: suse-ai-demo-traffic-gen
+          - service: agent-service
+            context: ./agent-service
+            image: suse-ai-demo-agent-service
     steps:
       - name: Checkout
         uses: actions/checkout@v4

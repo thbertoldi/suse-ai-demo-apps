@@ -32,6 +32,8 @@ spec:
               value: {{ .Values.otel.exporterEndpoint | quote }}
             - name: OTEL_SERVICE_NAME
               value: "gateway"
+            - name: AGENT_SERVICE_ADDR
+              value: {{ .Values.gateway.agentServiceAddr | quote }}
           readinessProbe:
             grpc:
               port: 50051

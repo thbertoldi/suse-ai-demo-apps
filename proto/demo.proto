@@ -5,6 +5,7 @@ option go_package = "github.com/suse/suse-ai-demo-apps/gateway/pb";
 service DemoService {
   rpc Query(QueryRequest) returns (QueryResponse);
   rpc Chat(ChatRequest) returns (ChatResponse);
+  rpc AgentChat(AgentChatRequest) returns (AgentChatResponse);
 }
 
 service RAGService {
@@ -53,4 +54,34 @@ message GenerateRequest {
 message GenerateResponse {
   string text = 1;
   string model = 2;
+}
+
+service AgentService {
+  rpc Run(AgentRequest) returns (AgentResponse);
+}
+
+message AgentChatRequest {
+  string message = 1;
+}
+
+message AgentChatResponse {
+  string reply = 1;
+  string model = 2;
+  repeated AgentToolCall tool_calls_made = 3;
+}
+
+message AgentRequest {
+  string message = 1;
+}
+
+message AgentResponse {
+  string reply = 1;
+  string model = 2;
+  repeated AgentToolCall tool_calls_made = 3;
+}
+
+message AgentToolCall {
+  string name = 1;
+  string arguments = 2;
+  string result = 3;
 }

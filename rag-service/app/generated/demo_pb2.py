@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\ndemo.proto\x12\x04\x64\x65mo\",\n\x0cQueryRequest\x12\r\n\x05query\x18\x01 \x01(\t\x12\r\n\x05top_k\x18\x02 \x01(\x05\"?\n\rQueryResponse\x12\x0e\n\x06\x61nswer\x18\x01 \x01(\t\x12\x0f\n\x07sources\x18\x02 \x03(\t\x12\r\n\x05model\x18\x03 \x01(\t\"\x1e\n\x0b\x43hatRequest\x12\x0f\n\x07message\x18\x01 \x01(\t\",\n\x0c\x43hatResponse\x12\r\n\x05reply\x18\x01 \x01(\t\x12\r\n\x05model\x18\x02 \x01(\t\"/\n\x0fRetrieveRequest\x12\r\n\x05query\x18\x01 \x01(\t\x12\r\n\x05top_k\x18\x02 \x01(\x05\"B\n\x10RetrieveResponse\x12\x0e\n\x06\x61nswer\x18\x01 \x01(\t\x12\x0f\n\x07sources\x18\x02 \x03(\t\x12\r\n\x05model\x18\x03 \x01(\t\"!\n\x0fGenerateRequest\x12\x0e\n\x06prompt\x18\x01 \x01(\t\"/\n\x10GenerateResponse\x12\x0c\n\x04text\x18\x01 \x01(\t\x12\r\n\x05model\x18\x02 \x01(\t2n\n\x0b\x44\x65moService\x12\x30\n\x05Query\x12\x12.demo.QueryRequest\x1a\x13.demo.QueryResponse\x12-\n\x04\x43hat\x12\x11.demo.ChatRequest\x1a\x12.demo.ChatResponse2G\n\nRAGService\x12\x39\n\x08Retrieve\x12\x15.demo.RetrieveRequest\x1a\x16.demo.RetrieveResponse2G\n\nLLMService\x12\x39\n\x08Generate\x12\x15.demo.GenerateRequest\x1a\x16.demo.GenerateResponseB.Z,github.com/suse/suse-ai-demo-apps/gateway/pbb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\ndemo.proto\x12\x04\x64\x65mo\",\n\x0cQueryRequest\x12\r\n\x05query\x18\x01 \x01(\t\x12\r\n\x05top_k\x18\x02 \x01(\x05\"?\n\rQueryResponse\x12\x0e\n\x06\x61nswer\x18\x01 \x01(\t\x12\x0f\n\x07sources\x18\x02 \x03(\t\x12\r\n\x05model\x18\x03 \x01(\t\"\x1e\n\x0b\x43hatRequest\x12\x0f\n\x07message\x18\x01 \x01(\t\",\n\x0c\x43hatResponse\x12\r\n\x05reply\x18\x01 \x01(\t\x12\r\n\x05model\x18\x02 \x01(\t\"/\n\x0fRetrieveRequest\x12\r\n\x05query\x18\x01 \x01(\t\x12\r\n\x05top_k\x18\x02 \x01(\x05\"B\n\x10RetrieveResponse\x12\x0e\n\x06\x61nswer\x18\x01 \x01(\t\x12\x0f\n\x07sources\x18\x02 \x03(\t\x12\r\n\x05model\x18\x03 \x01(\t\"!\n\x0fGenerateRequest\x12\x0e\n\x06prompt\x18\x01 \x01(\t\"/\n\x10GenerateResponse\x12\x0c\n\x04text\x18\x01 \x01(\t\x12\r\n\x05model\x18\x02 \x01(\t\"#\n\x10\x41gentChatRequest\x12\x0f\n\x07message\x18\x01 \x01(\t\"_\n\x11\x41gentChatResponse\x12\r\n\x05reply\x18\x01 \x01(\t\x12\r\n\x05model\x18\x02 \x01(\t\x12,\n\x0ftool_calls_made\x18\x03 \x03(\x0b\x32\x13.demo.AgentToolCall\"\x1f\n\x0c\x41gentRequest\x12\x0f\n\x07message\x18\x01 \x01(\t\"[\n\rAgentResponse\x12\r\n\x05reply\x18\x01 \x01(\t\x12\r\n\x05model\x18\x02 \x01(\t\x12,\n\x0ftool_calls_made\x18\x03 \x03(\x0b\x32\x13.demo.AgentToolCall\"@\n\rAgentToolCall\x12\x0c\n\x04name\x18\x01 \x01(\t\x12\x11\n\targuments\x18\x02 \x01(\t\x12\x0e\n\x06result\x18\x03 \x01(\t2\xac\x01\n\x0b\x44\x65moService\x12\x30\n\x05Query\x12\x12.demo.QueryRequest\x1a\x13.demo.QueryResponse\x12-\n\x04\x43hat\x12\x11.demo.ChatRequest\x1a\x12.demo.ChatResponse\x12<\n\tAgentChat\x12\x16.demo.AgentChatRequest\x1a\x17.demo.AgentChatResponse2G\n\nRAGService\x12\x39\n\x08Retrieve\x12\x15.demo.RetrieveRequest\x1a\x16.demo.RetrieveResponse2G\n\nLLMService\x12\x39\n\x08Generate\x12\x15.demo.GenerateRequest\x1a\x16.demo.GenerateResponse2>\n\x0c\x41gentService\x12.\n\x03Run\x12\x12.demo.AgentRequest\x1a\x13.demo.AgentResponseB.Z,github.com/suse/suse-ai-demo-apps/gateway/pbb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -48,10 +48,22 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_GENERATEREQUEST']._serialized_end=359
   _globals['_GENERATERESPONSE']._serialized_start=361
   _globals['_GENERATERESPONSE']._serialized_end=408
-  _globals['_DEMOSERVICE']._serialized_start=410
-  _globals['_DEMOSERVICE']._serialized_end=520
-  _globals['_RAGSERVICE']._serialized_start=522
-  _globals['_RAGSERVICE']._serialized_end=593
-  _globals['_LLMSERVICE']._serialized_start=595
-  _globals['_LLMSERVICE']._serialized_end=666
+  _globals['_AGENTCHATREQUEST']._serialized_start=410
+  _globals['_AGENTCHATREQUEST']._serialized_end=445
+  _globals['_AGENTCHATRESPONSE']._serialized_start=447
+  _globals['_AGENTCHATRESPONSE']._serialized_end=542
+  _globals['_AGENTREQUEST']._serialized_start=544
+  _globals['_AGENTREQUEST']._serialized_end=575
+  _globals['_AGENTRESPONSE']._serialized_start=577
+  _globals['_AGENTRESPONSE']._serialized_end=668
+  _globals['_AGENTTOOLCALL']._serialized_start=670
+  _globals['_AGENTTOOLCALL']._serialized_end=734
+  _globals['_DEMOSERVICE']._serialized_start=737
+  _globals['_DEMOSERVICE']._serialized_end=909
+  _globals['_RAGSERVICE']._serialized_start=911
+  _globals['_RAGSERVICE']._serialized_end=982
+  _globals['_LLMSERVICE']._serialized_start=984
+  _globals['_LLMSERVICE']._serialized_end=1055
+  _globals['_AGENTSERVICE']._serialized_start=1057
+  _globals['_AGENTSERVICE']._serialized_end=1119
 # @@protoc_insertion_point(module_scope)
