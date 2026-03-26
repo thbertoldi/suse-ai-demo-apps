@@ -16,6 +16,15 @@ A set of microservices forming a **RAG (Retrieval-Augmented Generation) pipeline
                                               |
                                               | HTTP (OpenAI-compat)
                                               '-------> [vLLM]
+                              |
+                              | gRPC
+                              '-------> [Agent Service (Python)]
+                                              |
+                                              | HTTP (OpenAI-compat)
+                                              +-------> [vLLM / Ollama]
+                                              |
+                                              | gRPC (search_docs tool)
+                                              '-------> [RAG Service]
 ```
 
 | Service | Language | Description | Port |
@@ -24,6 +33,7 @@ A set of microservices forming a **RAG (Retrieval-Augmented Generation) pipeline
 | **RAG Service** | Python | Embeds the user query, searches Qdrant for relevant documents, builds a context-augmented prompt, and calls Ollama for an answer. | 50052 |
 | **LLM Service** | Python | Forwards prompts directly to vLLM for general-purpose Q&A (no retrieval). | 50053 |
 | **Traffic Generator** | Python | Sends a round-robin mix of RAG and Chat queries to the Gateway at a configurable interval, producing continuous telemetry. | - |
+| **Agent Service** | Python | LangGraph ReAct agent with tools (search_docs, calculate, web_search, get_current_time). Produces `invoke_agent` and `execute_tool` OTel spans. | 50054 |
 
 Two different LLM backends (Ollama and vLLM) are used intentionally to demonstrate distributed tracing across heterogeneous GenAI providers.
 
@@ -39,6 +49,8 @@ All services export **traces and metrics** via OTLP/gRPC to an OpenTelemetry Col
 - **Vector DB spans**: `db.system=qdrant`, `db.operation.name`, `db.collection.name`
 - **gRPC spans**: auto-instrumented on all server and client connections
 - **HTTP spans**: auto-instrumented on outbound LLM/embedding calls
+- **Agent spans**: `invoke_agent {agent_name}` with `gen_ai.agent.name`, `gen_ai.agent.id`
+- **Tool execution spans**: `execute_tool {tool_name}` with `gen_ai.tool.name`, `gen_ai.tool.type`, `gen_ai.tool.call.id`
 - **W3C TraceContext** propagation across all hops
 
 ### Metrics
@@ -71,6 +83,7 @@ Each service has a Dockerfile. Build them from the repo root:
 docker build -t suse-ai-demo-gateway ./gateway
 docker build -t suse-ai-demo-rag-service ./rag-service
 docker build -t suse-ai-demo-llm-service ./llm-service
+docker build -t suse-ai-demo-agent-service ./agent-service
 docker build -t suse-ai-demo-traffic-gen ./traffic-gen
 ```
 
@@ -141,6 +154,15 @@ export GATEWAY_ADDR=localhost:50051
 export INTERVAL_SECONDS=10
 export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
 python main.py
+
+# Terminal 5: Agent service
+cd agent-service
+export LLM_BASE_URL=http://localhost:8000/v1
+export LLM_MODEL=llama3
+export LLM_PROVIDER=vllm
+export RAG_SERVICE_ADDR=localhost:50052
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
+python -m app.main
 ```
 
 ## Deploying with Helm
@@ -194,6 +216,19 @@ See [`helm/suse-ai-demo/values.yaml`](helm/suse-ai-demo/values.yaml) for all con
 | `LLM_PROVIDER` | `vllm` | Provider name for OTel attributes |
 | `ENABLE_OTEL_CONTENT_EVENTS` | `false` | Log input/output messages as span events |
 
+### Agent Service
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `GRPC_LISTEN_ADDR` | `[::]:50054` | gRPC listen address |
+| `LLM_BASE_URL` | `http://vllm:8000/v1` | LLM endpoint (OpenAI-compat) |
+| `LLM_MODEL` | `llama3` | LLM model name |
+| `LLM_PROVIDER` | `vllm` | Provider name for OTel attributes |
+| `RAG_SERVICE_ADDR` | `rag-service:50052` | RAG service gRPC address |
+| `AGENT_NAME` | `demo-agent` | Agent name for OTel attributes |
+| `AGENT_MAX_ITERATIONS` | `5` | Max LLM calls per agent request |
+| `ENABLE_OTEL_CONTENT_EVENTS` | `false` | Log input/output messages as span events |
+
 ### Traffic Generator
 
 | Variable | Default | Description |
@@ -231,6 +266,16 @@ suse-ai-demo-apps/
 │   │   ├── main.py
 │   │   ├── otel_setup.py
 │   │   ├── llm_client.py
+│   │   ├── grpc_server.py
+│   │   └── generated/
+│   └── Dockerfile
+├── agent-service/                # Python agent service (LangGraph)
+│   ├── app/
+│   │   ├── main.py
+│   │   ├── otel_setup.py
+│   │   ├── otel_instrumentation.py  # GenAI span wrappers
+│   │   ├── agent.py                 # LangGraph ReAct graph
+│   │   ├── tools.py                 # Agent tools
 │   │   ├── grpc_server.py
 │   │   └── generated/
 │   └── Dockerfile
