@@ -44,6 +44,15 @@ CHAT_MESSAGES = [
     "What are the benefits of containerization?",
 ]
 
+AGENT_MESSAGES = [
+    "Search our docs for what a Kubernetes pod is, then tell me the current time",
+    "Calculate 256 * 384 and search for information about container runtimes",
+    "What time is it right now?",
+    "Search the docs about distributed tracing and also look up what OpenTelemetry is on the web",
+    "Calculate 1024 / 16 and tell me the current time",
+    "Search our knowledge base for information about container images",
+]
+
 running = True
 
 
@@ -83,29 +92,37 @@ def main():
     channel = grpc.insecure_channel(gateway_addr)
     stub = demo_pb2_grpc.DemoServiceStub(channel)
 
-    queries = []
-    for i in range(max(len(RAG_QUERIES), len(CHAT_MESSAGES))):
-        if i < len(RAG_QUERIES):
-            queries.append(("rag", RAG_QUERIES[i]))
-        if i < len(CHAT_MESSAGES):
-            queries.append(("chat", CHAT_MESSAGES[i]))
+    query_types = ["rag", "chat", "agent"]
+    query_lists = {
+        "rag": RAG_QUERIES,
+        "chat": CHAT_MESSAGES,
+        "agent": AGENT_MESSAGES,
+    }
+    query_indices = {"rag": 0, "chat": 0, "agent": 0}
 
-    idx = 0
+    type_idx = 0
     logger.info(f"Starting traffic generation to {gateway_addr} every ~{interval}s")
 
     while running:
-        query_type, query_text = queries[idx % len(queries)]
-        idx += 1
+        query_type = query_types[type_idx % len(query_types)]
+        type_idx += 1
+        query_list = query_lists[query_type]
+        query_text = query_list[query_indices[query_type] % len(query_list)]
+        query_indices[query_type] += 1
 
         try:
             if query_type == "rag":
                 logger.info(f"Sending RAG query: {query_text}")
                 resp = stub.Query(demo_pb2.QueryRequest(query=query_text, top_k=3), timeout=120)
                 logger.info(f"RAG response model={resp.model}, sources={len(resp.sources)}")
-            else:
+            elif query_type == "chat":
                 logger.info(f"Sending Chat message: {query_text}")
                 resp = stub.Chat(demo_pb2.ChatRequest(message=query_text), timeout=120)
                 logger.info(f"Chat response model={resp.model}")
+            elif query_type == "agent":
+                logger.info(f"Sending Agent message: {query_text}")
+                resp = stub.AgentChat(demo_pb2.AgentChatRequest(message=query_text), timeout=180)
+                logger.info(f"Agent response model={resp.model}, tools_used={len(resp.tool_calls_made)}")
         except grpc.RpcError as e:
             logger.warning(f"gRPC error: {e.code()} {e.details()}")
         except Exception as e:
