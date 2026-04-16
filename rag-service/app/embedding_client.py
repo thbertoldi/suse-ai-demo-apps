@@ -65,5 +65,7 @@ def embed(
             **common_attrs, "gen_ai.token.type": "input",
         })
 
+        span.set_status(trace.StatusCode.OK)
+
         embedding = data["embeddings"][0]
         return embedding

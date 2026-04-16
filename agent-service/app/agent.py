@@ -135,6 +135,8 @@ def create_agent(rag_channel: grpc.Channel):
                     "gen_ai.output.messages": json.dumps([{"role": "assistant", "content": response.content}]),
                 })
 
+            span.set_status(trace.StatusCode.OK)
+
         return {
             "messages": [response],
             "llm_calls": state.get("llm_calls", 0) + 1,
