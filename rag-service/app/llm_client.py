@@ -106,4 +106,6 @@ def chat_completion(
                 "gen_ai.output.messages": json.dumps(output_messages),
             })
 
+        span.set_status(trace.StatusCode.OK)
+
         return data

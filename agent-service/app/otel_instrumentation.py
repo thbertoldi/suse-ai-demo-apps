@@ -37,6 +37,7 @@ def invoke_agent_span(agent_name: str, model: str):
     ) as span:
         try:
             yield span
+            span.set_status(trace.StatusCode.OK)
         except Exception as e:
             span.set_status(trace.StatusCode.ERROR, str(e))
             span.set_attribute("error.type", type(e).__name__)
