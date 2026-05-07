@@ -22,15 +22,15 @@ ragService:
     pullPolicy: Always
   replicas: 1
   llm:
-    baseUrl: http://ollama.suse-private-ai.svc.cluster.local:11434
-    model: llama3
+    baseUrl: http://ollama.suse-private-ai.svc.cluster.local:11434/v1
+    model: llama3.2:latest
     provider: ollama
   embedding:
     baseUrl: http://ollama.suse-private-ai.svc.cluster.local:11434
     model: nomic-embed-text
   vectorDb:
-    type: qdrant
-    url: http://qdrant.suse-private-ai.svc.cluster.local:6333
+    type: milvus
+    url: http://milvus.suse-private-ai.svc.cluster.local:19530
     collection: demo-docs
     username: ""
     password: ""
@@ -50,9 +50,9 @@ llmService:
     pullPolicy: Always
   replicas: 1
   llm:
-    baseUrl: http://vllm-router-service.suse-private-ai.svc.cluster.local:80/v1
-    model: llama3
-    provider: vllm
+    baseUrl: http://ollama.suse-private-ai.svc.cluster.local:11434/v1
+    model: llama3.2:latest
+    provider: ollama
   enableContentEvents: "false"
   resources:
     requests:
@@ -69,9 +69,9 @@ agentService:
     pullPolicy: Always
   replicas: 1
   llm:
-    baseUrl: http://vllm-router-service.suse-private-ai.svc.cluster.local:80/v1
-    model: llama3
-    provider: vllm
+    baseUrl: http://ollama.suse-private-ai.svc.cluster.local:11434/v1
+    model: llama3.2:latest
+    provider: ollama
   ragServiceAddr: rag-service:50052
   agentName: demo-agent
   maxIterations: "5"
