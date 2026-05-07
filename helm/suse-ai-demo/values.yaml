@@ -29,11 +29,11 @@ ragService:
     baseUrl: http://ollama.suse-private-ai.svc.cluster.local:11434
     model: nomic-embed-text
   vectorDb:
-    type: milvus
-    url: http://milvus.suse-private-ai.svc.cluster.local:19530
+    type: opensearch
+    url: http://opensearch-cluster-master.suse-private-ai.svc.cluster.local:9200
     collection: demo-docs
-    username: ""
-    password: ""
+    username: admin
+    password: MySecurePass123
   enableContentEvents: "false"
   resources:
     requests:
