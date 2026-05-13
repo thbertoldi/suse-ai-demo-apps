@@ -102,3 +102,4 @@ trafficGen:
 
 otel:
   exporterEndpoint: http://opentelemetry-collector.observability.svc.cluster.local:4317
+  serviceNamespace: suse-private-ai
