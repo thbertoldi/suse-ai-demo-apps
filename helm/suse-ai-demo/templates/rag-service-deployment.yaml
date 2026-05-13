@@ -54,6 +54,8 @@ spec:
               value: {{ .Values.otel.exporterEndpoint | quote }}
             - name: OTEL_SERVICE_NAME
               value: "rag-service"
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: "service.namespace={{ .Values.otel.serviceNamespace }}"
           readinessProbe:
             grpc:
               port: 50052
