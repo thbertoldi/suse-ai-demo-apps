@@ -15,7 +15,7 @@ from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExport
 from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
 from opentelemetry.instrumentation.grpc import GrpcInstrumentorClient
 from opentelemetry.propagate import set_global_textmap
-from opentelemetry.propagators.composite import CompositeHTTPPropagator
+from opentelemetry.propagators.composite import CompositePropagator
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 from opentelemetry.baggage.propagation import W3CBaggagePropagator
 
@@ -76,7 +76,7 @@ def main():
     meter_provider = MeterProvider(resource=resource, metric_readers=[metric_reader])
     metrics.set_meter_provider(meter_provider)
 
-    set_global_textmap(CompositeHTTPPropagator([
+    set_global_textmap(CompositePropagator([
         TraceContextTextMapPropagator(),
         W3CBaggagePropagator(),
     ]))

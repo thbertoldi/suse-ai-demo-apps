@@ -4,8 +4,8 @@ from contextlib import contextmanager
 
 from opentelemetry import trace, metrics
 
-tracer = trace.get_tracer("gen_ai")
-meter = metrics.get_meter("gen_ai")
+tracer = trace.get_tracer(__name__)
+meter = metrics.get_meter(__name__)
 
 token_usage_histogram = meter.create_histogram(
     name="gen_ai.client.token.usage",
@@ -19,7 +19,15 @@ operation_duration_histogram = meter.create_histogram(
     unit="s",
 )
 
-ENABLE_CONTENT_EVENTS = os.environ.get("ENABLE_OTEL_CONTENT_EVENTS", "false").lower() == "true"
+def _capture_content() -> bool:
+    # Standard OTel GenAI opt-in; fall back to the legacy var for backward compat.
+    val = os.environ.get("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT")
+    if val is None:
+        val = os.environ.get("ENABLE_OTEL_CONTENT_EVENTS", "false")
+    return val.strip().lower() in ("true", "1", "yes")
+
+
+ENABLE_CONTENT_EVENTS = _capture_content()
 
 
 @contextmanager
@@ -37,8 +45,8 @@ def invoke_agent_span(agent_name: str, model: str):
     ) as span:
         try:
             yield span
-            span.set_status(trace.StatusCode.OK)
         except Exception as e:
+            span.record_exception(e)
             span.set_status(trace.StatusCode.ERROR, str(e))
             span.set_attribute("error.type", type(e).__name__)
             raise
@@ -60,6 +68,7 @@ def execute_tool_span(tool_name: str, tool_call_id: str, tool_description: str =
         try:
             yield span
         except Exception as e:
+            span.record_exception(e)
             span.set_status(trace.StatusCode.ERROR, str(e))
             span.set_attribute("error.type", type(e).__name__)
             raise

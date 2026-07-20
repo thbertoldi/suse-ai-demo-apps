@@ -101,5 +101,10 @@ trafficGen:
       memory: 128Mi
 
 otel:
+  # NOTE: OTLP export uses plaintext gRPC (the SDK exporters set insecure=true). This is a
+  # deliberate trade-off for in-cluster demo traffic to the collector. For non-demo use,
+  # terminate TLS at the collector's OTLP receiver and switch to an https:// endpoint.
   exporterEndpoint: http://opentelemetry-collector.observability.svc.cluster.local:4317
   serviceNamespace: suse-private-ai
+  # Reported as the deployment.environment.name resource attribute on all services.
+  environment: demo

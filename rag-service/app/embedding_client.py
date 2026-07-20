@@ -2,8 +2,8 @@ import time
 import requests
 from opentelemetry import trace, metrics
 
-tracer = trace.get_tracer("gen_ai")
-meter = metrics.get_meter("gen_ai")
+tracer = trace.get_tracer(__name__)
+meter = metrics.get_meter(__name__)
 
 token_usage_histogram = meter.create_histogram(
     name="gen_ai.client.token.usage",
@@ -34,6 +34,7 @@ def embed(
         },
     ) as span:
         start_time = time.monotonic()
+        error_type = None
         try:
             response = requests.post(
                 f"{base_url}/api/embed",
@@ -43,10 +44,11 @@ def embed(
             response.raise_for_status()
             data = response.json()
         except requests.RequestException as e:
-            span.set_status(trace.StatusCode.ERROR, str(e))
             error_type = type(e).__name__
             if hasattr(e, "response") and e.response is not None:
                 error_type = str(e.response.status_code)
+            span.record_exception(e)
+            span.set_status(trace.StatusCode.ERROR, str(e))
             span.set_attribute("error.type", error_type)
             raise
         finally:
@@ -56,7 +58,8 @@ def embed(
                 "gen_ai.request.model": model,
                 "gen_ai.provider.name": provider,
             }
-            operation_duration_histogram.record(duration, attributes=common_attrs)
+            duration_attrs = {**common_attrs, "error.type": error_type} if error_type else common_attrs
+            operation_duration_histogram.record(duration, attributes=duration_attrs)
 
         input_tokens = data.get("prompt_eval_count", 0)
         span.set_attribute("gen_ai.usage.input_tokens", input_tokens)
@@ -64,8 +67,6 @@ def embed(
         token_usage_histogram.record(input_tokens, attributes={
             **common_attrs, "gen_ai.token.type": "input",
         })
-
-        span.set_status(trace.StatusCode.OK)
 
         embedding = data["embeddings"][0]
         return embedding
