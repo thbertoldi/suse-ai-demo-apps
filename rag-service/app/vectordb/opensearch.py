@@ -4,7 +4,7 @@ from opentelemetry import trace
 
 from .base import Document, VectorStore
 
-tracer = trace.get_tracer("vectordb")
+tracer = trace.get_tracer(__name__)
 
 
 class OpenSearchVectorStore(VectorStore):
@@ -25,7 +25,7 @@ class OpenSearchVectorStore(VectorStore):
             f"search {self._collection_name}",
             kind=trace.SpanKind.CLIENT,
             attributes={
-                "db.system": "opensearch",
+                "db.system.name": "opensearch",
                 "db.operation.name": "search",
                 "db.collection.name": self._collection_name,
             },
@@ -55,6 +55,7 @@ class OpenSearchVectorStore(VectorStore):
                 span.set_attribute("db.response.returned_rows", len(docs))
                 return docs
             except Exception as e:
+                span.record_exception(e)
                 span.set_status(trace.StatusCode.ERROR, str(e))
                 span.set_attribute("error.type", type(e).__name__)
                 raise
@@ -64,7 +65,7 @@ class OpenSearchVectorStore(VectorStore):
             f"upsert {self._collection_name}",
             kind=trace.SpanKind.CLIENT,
             attributes={
-                "db.system": "opensearch",
+                "db.system.name": "opensearch",
                 "db.operation.name": "upsert",
                 "db.collection.name": self._collection_name,
             },
@@ -79,8 +80,9 @@ class OpenSearchVectorStore(VectorStore):
                         "embedding": doc.embedding,
                     })
                 self._client.bulk(body=bulk_body, refresh=True)
-                span.set_attribute("db.operation.batch_size", len(documents))
+                span.set_attribute("db.operation.batch.size", len(documents))
             except Exception as e:
+                span.record_exception(e)
                 span.set_status(trace.StatusCode.ERROR, str(e))
                 span.set_attribute("error.type", type(e).__name__)
                 raise

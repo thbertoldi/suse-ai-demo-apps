@@ -6,8 +6,8 @@ requests==2.32.3
 qdrant-client==1.12.1
 pymilvus==2.5.18
 opensearch-py==2.8.0
-opentelemetry-api==1.40.0
-opentelemetry-sdk==1.40.0
-opentelemetry-exporter-otlp-proto-grpc==1.40.0
-opentelemetry-instrumentation-grpc==0.61b0
-opentelemetry-instrumentation-requests==0.61b0
+opentelemetry-api==1.44.0
+opentelemetry-sdk==1.44.0
+opentelemetry-exporter-otlp-proto-grpc==1.44.0
+opentelemetry-instrumentation-grpc==0.65b0
+opentelemetry-instrumentation-requests==0.65b0

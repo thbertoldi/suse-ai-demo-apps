@@ -48,14 +48,18 @@ spec:
             - name: VECTOR_DB_PASSWORD
               value: {{ .Values.ragService.vectorDb.password | quote }}
             {{- end }}
-            - name: ENABLE_OTEL_CONTENT_EVENTS
+            - name: OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT
               value: {{ .Values.ragService.enableContentEvents | quote }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ .Values.otel.exporterEndpoint | quote }}
             - name: OTEL_SERVICE_NAME
               value: "rag-service"
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
             - name: OTEL_RESOURCE_ATTRIBUTES
-              value: "service.namespace={{ .Values.otel.serviceNamespace }}"
+              value: "service.namespace={{ .Values.otel.serviceNamespace }},service.version={{ .Chart.AppVersion }},deployment.environment.name={{ .Values.otel.environment }},service.instance.id=$(POD_NAME)"
           readinessProbe:
             grpc:
               port: 50052

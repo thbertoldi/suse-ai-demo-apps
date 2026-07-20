@@ -30,10 +30,11 @@ def search_docs(query: str, rag_channel: grpc.Channel, top_k: int = 3, tool_call
                 result = "\n\n".join(sources)
             else:
                 result = "No relevant documents found."
-            span.set_status(trace.StatusCode.OK)
         except grpc.RpcError as e:
             result = f"Error searching documents: {e.details()}"
+            span.record_exception(e)
             span.set_status(trace.StatusCode.ERROR, result)
+            span.set_attribute("error.type", type(e).__name__)
         record_tool_result(span, args, result)
         return result
 
@@ -43,10 +44,11 @@ def calculate(expression: str, tool_call_id: str = "") -> str:
         args = json.dumps({"expression": expression})
         try:
             result = str(simple_eval(expression))
-            span.set_status(trace.StatusCode.OK)
         except Exception as e:
             result = f"Error evaluating expression: {e}"
+            span.record_exception(e)
             span.set_status(trace.StatusCode.ERROR, result)
+            span.set_attribute("error.type", type(e).__name__)
         record_tool_result(span, args, result)
         return result
 
@@ -62,7 +64,6 @@ def web_search(query: str, tool_call_id: str = "") -> str:
         ]
         result = json.dumps(results)
         record_tool_result(span, args, result)
-        span.set_status(trace.StatusCode.OK)
         return result
 
 
@@ -70,5 +71,4 @@ def get_current_time(tool_call_id: str = "") -> str:
     with execute_tool_span("get_current_time", tool_call_id, TOOL_DESCRIPTIONS["get_current_time"]) as span:
         result = datetime.now(timezone.utc).isoformat()
         record_tool_result(span, "{}", result)
-        span.set_status(trace.StatusCode.OK)
         return result

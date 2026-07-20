@@ -68,7 +68,7 @@ def create_agent(rag_channel: grpc.Channel):
     lc_tools = [search_docs, calculate, web_search, get_current_time]
     llm_with_tools = llm.bind_tools(lc_tools)
 
-    tracer = trace.get_tracer("gen_ai")
+    tracer = trace.get_tracer(__name__)
 
     def llm_call(state: AgentState) -> dict:
         messages = [SystemMessage(content=SYSTEM_PROMPT)] + state["messages"]
@@ -86,16 +86,24 @@ def create_agent(rag_channel: grpc.Channel):
             },
         ) as span:
             if ENABLE_CONTENT_EVENTS:
-                input_msgs = [{"role": m.type, "content": m.content} for m in messages if hasattr(m, "content")]
-                span.add_event("gen_ai.input.messages", attributes={
-                    "gen_ai.input.messages": json.dumps(input_msgs),
-                })
+                span.set_attribute(
+                    "gen_ai.system_instructions",
+                    json.dumps([{"type": "text", "content": SYSTEM_PROMPT}]),
+                )
+                input_msgs = [
+                    {"role": m.type, "content": m.content}
+                    for m in state["messages"] if hasattr(m, "content")
+                ]
+                span.set_attribute("gen_ai.input.messages", json.dumps(input_msgs))
 
+            error_type = None
             try:
                 response = llm_with_tools.invoke(messages)
             except Exception as e:
+                error_type = type(e).__name__
+                span.record_exception(e)
                 span.set_status(trace.StatusCode.ERROR, str(e))
-                span.set_attribute("error.type", type(e).__name__)
+                span.set_attribute("error.type", error_type)
                 raise
             finally:
                 duration = time.monotonic() - start_time
@@ -104,7 +112,8 @@ def create_agent(rag_channel: grpc.Channel):
                     "gen_ai.request.model": llm_model,
                     "gen_ai.provider.name": llm_provider,
                 }
-                operation_duration_histogram.record(duration, attributes=common_attrs)
+                duration_attrs = {**common_attrs, "error.type": error_type} if error_type else common_attrs
+                operation_duration_histogram.record(duration, attributes=duration_attrs)
 
             if hasattr(response, "response_metadata"):
                 meta = response.response_metadata
@@ -131,11 +140,10 @@ def create_agent(rag_channel: grpc.Channel):
                 })
 
             if ENABLE_CONTENT_EVENTS:
-                span.add_event("gen_ai.output.messages", attributes={
-                    "gen_ai.output.messages": json.dumps([{"role": "assistant", "content": response.content}]),
-                })
-
-            span.set_status(trace.StatusCode.OK)
+                span.set_attribute(
+                    "gen_ai.output.messages",
+                    json.dumps([{"role": "assistant", "content": response.content}]),
+                )
 
         return {
             "messages": [response],
@@ -202,7 +210,7 @@ def create_agent(rag_channel: grpc.Channel):
             })
 
             if result.get("llm_calls", 0) >= max_iterations:
-                span.set_attribute("gen_ai.agent.truncated", True)
+                span.set_attribute("app.agent.truncated", True)
 
             last = result["messages"][-1]
             reply = last.content if hasattr(last, "content") else str(last)
