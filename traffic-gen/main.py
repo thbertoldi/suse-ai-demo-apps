@@ -51,6 +51,9 @@ AGENT_MESSAGES = [
     "Search the docs about distributed tracing and also look up what OpenTelemetry is on the web",
     "Calculate 1024 / 16 and tell me the current time",
     "Search our knowledge base for information about container images",
+    "Classify an iris flower with sepal length 5.1, sepal width 3.5, petal length 1.4, petal width 0.2",
+    "Which models are registered in the model registry?",
+    "List the registered models, then classify an iris with sepal 6.2/3.4 and petal 5.4/2.3",
 ]
 
 running = True
