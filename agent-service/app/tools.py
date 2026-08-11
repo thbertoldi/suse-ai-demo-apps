@@ -1,14 +1,27 @@
 import json
+import os
 import random
 import time
 from datetime import datetime, timezone
 
 import grpc
+import httpx
 from simpleeval import simple_eval
 from opentelemetry import trace
+from opentelemetry.trace import SpanKind
 
 from app.generated import demo_pb2, demo_pb2_grpc
-from app.otel_instrumentation import execute_tool_span, record_tool_result
+from app.otel_instrumentation import execute_tool_span, record_tool_result, tracer
+
+
+KSERVE_PREDICT_URL = os.environ.get(
+    "KSERVE_PREDICT_URL",
+    "http://sklearn-iris-predictor-default.kserve-test.svc.cluster.local/v1/models/sklearn-iris:predict",
+)
+MODEL_REGISTRY_URL = os.environ.get(
+    "MODEL_REGISTRY_URL",
+    "http://model-registry-service.kubeflow.svc.cluster.local:8080",
+)
 
 
 TOOL_DESCRIPTIONS = {
@@ -16,6 +29,8 @@ TOOL_DESCRIPTIONS = {
     "calculate": "Evaluate a mathematical expression and return the result",
     "web_search": "Search the web for information on a topic",
     "get_current_time": "Get the current date and time in UTC",
+    "predict": "Classify an iris flower species from its sepal/petal measurements using the deployed KServe model",
+    "list_models": "List the machine learning models registered in the Kubeflow model registry",
 }
 
 
@@ -71,4 +86,47 @@ def get_current_time(tool_call_id: str = "") -> str:
         result = datetime.now(timezone.utc).isoformat()
         record_tool_result(span, "{}", result)
         span.set_status(trace.StatusCode.OK)
+        return result
+
+
+def predict(sepal_length: float, sepal_width: float, petal_length: float,
+            petal_width: float, tool_call_id: str = "") -> str:
+    with execute_tool_span("predict", tool_call_id, TOOL_DESCRIPTIONS["predict"]) as span:
+        payload = {"instances": [[sepal_length, sepal_width, petal_length, petal_width]]}
+        args = json.dumps(payload)
+        try:
+            # Explicit CLIENT span carries the KServe relation attribute so the
+            # collector's transform/kubeflow-relations sets peer.service=kserve.
+            with tracer.start_as_current_span(
+                "predict sklearn-iris",
+                kind=SpanKind.CLIENT,
+                attributes={"kserve.inference.service": "sklearn-iris"},
+            ):
+                resp = httpx.post(KSERVE_PREDICT_URL, json=payload, timeout=30)
+                resp.raise_for_status()
+                data = resp.json()
+            result = json.dumps(data.get("predictions", data))
+            span.set_status(trace.StatusCode.OK)
+        except Exception as e:
+            result = f"Error calling inference service: {e}"
+            span.set_status(trace.StatusCode.ERROR, result)
+        record_tool_result(span, args, result)
+        return result
+
+
+def list_models(tool_call_id: str = "") -> str:
+    with execute_tool_span("list_models", tool_call_id, TOOL_DESCRIPTIONS["list_models"]) as span:
+        url = f"{MODEL_REGISTRY_URL}/api/model_registry/v1alpha3/registered_models"
+        args = json.dumps({"url": url})
+        try:
+            resp = httpx.get(url, timeout=30)
+            resp.raise_for_status()
+            items = resp.json().get("items", [])
+            names = [m.get("name", "") for m in items if m.get("name")]
+            result = json.dumps(names) if names else "No models registered."
+            span.set_status(trace.StatusCode.OK)
+        except Exception as e:
+            result = f"Error listing models: {e}"
+            span.set_status(trace.StatusCode.ERROR, result)
+        record_tool_result(span, args, result)
         return result
