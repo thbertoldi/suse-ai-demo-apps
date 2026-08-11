@@ -49,3 +49,57 @@ def test_run_deploy_emits_kserve_span(span_exporter, monkeypatch):
     spans = span_exporter.get_finished_spans()
     match = [s for s in spans if s.attributes.get("kserve.inference.service") == "sklearn-iris"]
     assert match, "expected a span tagged kserve.inference.service=sklearn-iris"
+
+
+def test_run_register_idempotent_on_conflict(monkeypatch):
+    """run_register should tolerate model/version already existing (conflict), recover the id, and complete."""
+    post_calls = []
+    get_calls = []
+
+    class ConflictResponse:
+        status_code = 409
+
+        def raise_for_status(self):
+            raise steps.httpx.HTTPStatusError("conflict", request=None, response=self)
+
+        def json(self):
+            return {}
+
+    class ListResponse:
+        status_code = 200
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"items": [{"name": "iris", "id": "7"}]}
+
+    class VersionOkResponse:
+        status_code = 201
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"id": "v1-id"}
+
+    def fake_post(url, json=None, timeout=None):
+        post_calls.append(url)
+        if url.endswith("/registered_models"):
+            return ConflictResponse()
+        elif "/versions" in url:
+            return VersionOkResponse()
+        return FakeResponse()
+
+    def fake_get(url, timeout=None):
+        get_calls.append(url)
+        return ListResponse()
+
+    monkeypatch.setattr(steps.httpx, "post", fake_post)
+    monkeypatch.setattr(steps.httpx, "get", fake_get)
+
+    steps.run_register("http://model-registry-service:8080", model_name="iris", version="v1")
+
+    assert any(u.endswith("/api/model_registry/v1alpha3/registered_models") for u in post_calls), "must POST to registered_models"
+    assert any(u.endswith("/api/model_registry/v1alpha3/registered_models") for u in get_calls), "must GET existing models on conflict"
+    assert any("/registered_models/7/versions" in u for u in post_calls), "must POST version using recovered id=7"

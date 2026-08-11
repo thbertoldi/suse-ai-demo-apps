@@ -21,12 +21,37 @@ def run_train() -> float:
 def run_register(registry_url: str, model_name: str = "iris", version: str = "v1") -> None:
     base = registry_url.rstrip("/")
     rm_url = f"{base}/api/model_registry/v1alpha3/registered_models"
+
+    # Always POST to registered_models first (forms KFP→model-registry topology edge)
     resp = httpx.post(rm_url, json=iris_lib.build_registered_model_payload(model_name, "demo iris model"), timeout=30)
-    resp.raise_for_status()
-    rm_id = resp.json().get("id", "")
+
+    rm_id = ""
+    try:
+        resp.raise_for_status()
+        rm_id = resp.json().get("id", "")
+    except httpx.HTTPStatusError:
+        # Model already exists (conflict); recover id by GET-ing the list
+        list_resp = httpx.get(rm_url, timeout=30)
+        list_resp.raise_for_status()
+        data = list_resp.json()
+        # Handle both bare list and {"items": [...]} response formats
+        models = data if isinstance(data, list) else data.get("items", [])
+        for model in models:
+            if model.get("name") == model_name:
+                rm_id = model.get("id", "")
+                break
+
+    if not rm_id:
+        raise RuntimeError(f"Failed to determine registered model id for {model_name!r}")
+
     mv_url = f"{base}/api/model_registry/v1alpha3/registered_models/{rm_id}/versions"
     resp2 = httpx.post(mv_url, json=iris_lib.build_model_version_payload(model_name, version, iris_lib.IRIS_STORAGE_URI), timeout=30)
-    resp2.raise_for_status()
+
+    # Tolerate version already existing
+    try:
+        resp2.raise_for_status()
+    except httpx.HTTPStatusError:
+        pass
 
 
 def _kserve_api():
