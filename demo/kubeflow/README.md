@@ -21,7 +21,7 @@ curl -s localhost:8080/api/model_registry/v1alpha3/registered_models | head
 ```bash
 # After CI builds the agent-service image, roll it out to pick up the new tools:
 kubectl -n suse-private-ai set env deploy/agent-service \
-  KSERVE_PREDICT_URL=http://sklearn-iris-predictor-default.kserve-test.svc.cluster.local/v1/models/sklearn-iris:predict \
+  KSERVE_PREDICT_URL=http://sklearn-iris.kserve-test.svc.cluster.local/v1/models/sklearn-iris:predict \
   MODEL_REGISTRY_URL=http://model-registry-service.kubeflow.svc.cluster.local:8080
 kubectl -n suse-private-ai rollout restart deploy/agent-service deploy/traffic-gen
 ```
@@ -55,3 +55,11 @@ climbs with agent traffic. `ml-registry.kubeflow` renders (dark on a bare instal
   `model-registry`; confirm `MODEL_REGISTRY_URL` and that the REST path returns 200.
 - **No KFP edges:** confirm the step pods carry `OTEL_RESOURCE_ATTRIBUTES` with
   `suse.ai.component.name=kubeflow-pipelines` and that their spans reach the collector.
+- **Kubeflow OIDC on a full install:** the istio ingress gateway enforces OIDC, so
+  in-cluster calls to the KServe route and to `model-registry-service` get bounced
+  (302 → `/dex/auth`, or 403). The topology edges still form — they are built from
+  the OTel spans (the `predict` CLIENT span's `kserve.inference.service` attribute
+  and the httpx span's `model-registry` URL), not from HTTP success. To get real
+  `200` predictions in-cluster, target the Knative revision service directly, e.g.
+  `http://sklearn-iris-predictor-<revision>.kserve-test.svc.cluster.local/...`
+  (`kubectl -n kserve-test get svc`), which bypasses the gateway.
