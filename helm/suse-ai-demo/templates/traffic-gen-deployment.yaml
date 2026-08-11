@@ -29,7 +29,7 @@ spec:
             - name: OTEL_SERVICE_NAME
               value: "traffic-gen"
             - name: OTEL_RESOURCE_ATTRIBUTES
-              value: "service.namespace={{ .Values.otel.serviceNamespace }}"
+              value: "service.namespace={{ .Values.otel.serviceNamespace }},suse.ai.managed=true,suse.ai.component.type=application,suse.ai.component.name=traffic-gen"
           resources:
             {{- toYaml .Values.trafficGen.resources | nindent 12 }}
 {{- end }}

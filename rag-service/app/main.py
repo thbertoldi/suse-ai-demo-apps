@@ -52,7 +52,7 @@ def serve():
     store = create_vector_store(
         db_type=os.environ.get("VECTOR_DB_TYPE", "qdrant"),
         url=os.environ.get("VECTOR_DB_URL", "http://qdrant:6333"),
-        collection_name=os.environ.get("VECTOR_DB_COLLECTION", "demo-docs"),
+        collection_name=os.environ.get("VECTOR_DB_COLLECTION", "demo_docs"),
         username=os.environ.get("VECTOR_DB_USERNAME", ""),
         password=os.environ.get("VECTOR_DB_PASSWORD", ""),
     )

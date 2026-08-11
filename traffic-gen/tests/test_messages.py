@@ -32,3 +32,10 @@ def test_agent_messages_include_registry_prompt():
     agent_messages = get_agent_messages()
     joined = " ".join(agent_messages).lower()
     assert "model registry" in joined or "registered" in joined
+
+
+def test_agent_messages_include_deterministic_lifecycle_scenarios():
+    agent_messages = get_agent_messages()
+    assert any(message.startswith("[demo:lifecycle]") for message in agent_messages)
+    assert any(message.startswith("[demo:list-models]") for message in agent_messages)
+    assert any(message.startswith("[demo:predict]") for message in agent_messages)

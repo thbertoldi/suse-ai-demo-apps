@@ -36,18 +36,22 @@ spec:
               value: {{ .Values.agentService.agentName | quote }}
             - name: AGENT_MAX_ITERATIONS
               value: {{ .Values.agentService.maxIterations | quote }}
+            - name: DEMO_DETERMINISTIC_TOOLS
+              value: {{ .Values.agentService.deterministicDemoTools | quote }}
             - name: ENABLE_OTEL_CONTENT_EVENTS
               value: {{ .Values.agentService.enableContentEvents | quote }}
             - name: KSERVE_PREDICT_URL
               value: {{ .Values.agentService.kservePredictUrl | quote }}
             - name: MODEL_REGISTRY_URL
               value: {{ .Values.agentService.modelRegistryUrl | quote }}
+            - name: MODEL_REGISTRY_BEARER_TOKEN
+              value: {{ .Values.agentService.modelRegistryBearerToken | quote }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ .Values.otel.exporterEndpoint | quote }}
             - name: OTEL_SERVICE_NAME
               value: "agent-service"
             - name: OTEL_RESOURCE_ATTRIBUTES
-              value: "service.namespace={{ .Values.otel.serviceNamespace }}"
+              value: "service.namespace={{ .Values.otel.serviceNamespace }},suse.ai.managed=true,suse.ai.component.type=agent,suse.ai.component.name=agent-service"
           readinessProbe:
             grpc:
               port: 50054

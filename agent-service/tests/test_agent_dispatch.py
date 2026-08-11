@@ -60,3 +60,32 @@ def test_agent_dispatches_predict(monkeypatch):
     run_agent("classify an iris")
 
     assert "args" in called
+
+
+def test_deterministic_lifecycle_calls_registry_and_predict(monkeypatch):
+    calls = []
+    monkeypatch.setenv("DEMO_DETERMINISTIC_TOOLS", "true")
+    monkeypatch.setattr(
+        tools,
+        "list_models",
+        lambda tool_call_id="": calls.append("list_models") or '["iris"]',
+    )
+    monkeypatch.setattr(
+        tools,
+        "predict",
+        lambda **kwargs: calls.append("predict") or "[0]",
+    )
+    _patch_llm(monkeypatch, "get_current_time")
+
+    run_agent = agent_mod.create_agent(MagicMock())
+    result = run_agent(
+        '[demo:lifecycle] {"sepal_length": 5.1, "sepal_width": 3.5, '
+        '"petal_length": 1.4, "petal_width": 0.2}'
+    )
+
+    assert calls == ["list_models", "predict"]
+    assert [item["name"] for item in result["tool_calls_made"]] == [
+        "list_models",
+        "predict",
+    ]
+    assert result["model"] == "deterministic-demo"

@@ -1,65 +1,147 @@
-# Kubeflow / KServe Component-Relations Demo
+# Kubeflow model-lifecycle demo
 
-Demonstrates the 2.2.3 component relations: one model (iris) related from both
-the app layer and the pipeline layer.
+This demo runs a real Iris model lifecycle through Kubeflow Pipelines, Kubeflow
+Model Registry, and KServe while emitting OpenTelemetry traces and metrics for
+the SUSE AI Observability StackPack.
+
+## Lifecycle
+
+Each uncached pipeline run:
+
+1. Writes the Iris dataset as a KFP `Dataset` artifact.
+2. Trains a scikit-learn model and publishes `Model`, `Metrics`, and
+   `ClassificationMetrics` artifacts.
+3. Enforces a configurable accuracy gate.
+4. Creates or reuses the `iris` RegisteredModel, then creates the run-specific
+   ModelVersion and ModelArtifact in Kubeflow Model Registry.
+5. Deploys the exact KFP model artifact to a KServe `InferenceService`. KFP's
+   `minio://` artifact URI is normalized to `s3://` for KServe's storage
+   initializer, without copying the model.
+6. Waits until KServe's latest-created revision is also its latest-ready
+   revision, binds the stable `suse-ai-sklearn-iris` Service to that exact
+   revision, and executes a real prediction smoke test.
+
+The revision-pinned Service bypasses the browser-facing Kubeflow OIDC route and
+prevents the agent from temporarily reaching an older model during a rollout.
 
 ## Prerequisites
-- Kubeflow + KServe installed (see `knowledge/KUBEFLOW_INSTALL_RUNBOOK.md` in the
-  observability-extension repo).
-- Stackpack 2.2.3 uploaded; branch collector (`ghcr.io/suse/suse-ai-opentelemetry-collector:0.156.0`) running.
-- The `sklearn-iris` InferenceService already running in `kserve-test`.
-- Demo apps deployed via `helm/suse-ai-demo` in the `suse-private-ai` namespace.
 
-## 0. Verify the model-registry REST path (do first)
+- Kubeflow Pipelines, Model Registry, and KServe are installed.
+- The profile namespace exists (default: `kubeflow-user-example-com`).
+- The demo apps Helm chart is deployed in `suse-private-ai`.
+- StackPack 2.2.8 or newer and the SUSE AI collector configuration are active.
+- The profile service account can manage namespaced InferenceServices, Secrets,
+  ServiceAccounts, and Services. The chart provisions this access through
+  `kubeflowPipeline.rbac`.
+- The `suse-ai-registry` pull secret exists in the profile namespace for the
+  private SUSE KServe runtime image.
+
+Deploy or update the chart before running the pipeline:
+
 ```bash
-kubectl -n kubeflow port-forward svc/model-registry-service 8080:8080 &
-curl -s localhost:8080/api/model_registry/v1alpha3/registered_models | head
-# If this 404s, adjust MODEL_REGISTRY_URL / the path in steps.py + tools.py.
+helm upgrade --install suse-ai-demo ./helm/suse-ai-demo \
+  --namespace suse-private-ai --create-namespace \
+  --set kubeflowPipeline.rbac.enabled=true \
+  --set kubeflowPipeline.rbac.serviceAccountNamespace=kubeflow-user-example-com \
+  --set kubeflowPipeline.rbac.serviceAccountName=default-editor \
+  --set kubeflowPipeline.rbac.kserveNamespace=kubeflow-user-example-com
 ```
 
-## 1. Always-on app edges
-```bash
-# After CI builds the agent-service image, roll it out to pick up the new tools:
-kubectl -n suse-private-ai set env deploy/agent-service \
-  KSERVE_PREDICT_URL=http://sklearn-iris.kserve-test.svc.cluster.local/v1/models/sklearn-iris:predict \
-  MODEL_REGISTRY_URL=http://model-registry-service.kubeflow.svc.cluster.local:8080
-kubectl -n suse-private-ai rollout restart deploy/agent-service deploy/traffic-gen
-```
-Wait a few minutes for traffic, then in SUSE Observability topology confirm:
-- `agent-service ──▶ inference-engine.kserve`
-- `agent-service ──▶ ml-registry.kubeflow`
+The pipeline, rather than Helm, owns `suse-ai-sklearn-iris` because its selector
+must be updated atomically to the revision created by each run.
 
-## 2. Pipeline edges (re-runnable one-shot)
+## Verify Model Registry access
+
+The SUSE Kubeflow demo AuthorizationPolicy requires an `Authorization` header.
+The default token is `demo`; use a Secret-backed value outside a demo cluster.
+
+```bash
+kubectl -n kubeflow port-forward svc/model-registry-service 18080:8080
+
+curl -fsS -H 'Authorization: Bearer demo' \
+  http://127.0.0.1:18080/api/model_registry/v1alpha3/registered_models
+```
+
+## Build and submit
+
+Use an immutable image tag so every uploaded pipeline version is reproducible:
+
 ```bash
 cd demo/kubeflow
-docker build -t ghcr.io/thbertoldi/suse-ai-demo-iris-pipeline:latest .
-docker push ghcr.io/thbertoldi/suse-ai-demo-iris-pipeline:latest
-python -m pipeline            # produces iris_pipeline.yaml
-# Upload iris_pipeline.yaml via the Kubeflow Pipelines UI and create a run,
-# OR submit with the KFP SDK against the in-cluster endpoint.
-```
-After the run completes, confirm:
-- `kubeflow-pipelines ──▶ ml-registry.kubeflow`
-- `kubeflow-pipelines ──▶ inference-engine.kserve`
+python -m venv .venv
+.venv/bin/pip install -r requirements.txt
 
-## 3. Full picture
-Filter topology to the new components; all four edges converge on the iris model.
-Click `inference-engine.kserve` → `request_predict_seconds_count{model_name="sklearn-iris"}`
-climbs with agent traffic. `ml-registry.kubeflow` renders (dark on a bare install).
+export TAG=demo-$(date -u +%Y%m%d-%H%M%S)
+echo "${TAG}"
+docker buildx build --platform linux/amd64 \
+  -t ghcr.io/thbertoldi/suse-ai-demo-iris-pipeline:${TAG} \
+  --push .
+
+kubectl -n kubeflow port-forward svc/ml-pipeline 18889:8888
+```
+
+In another terminal:
+
+```bash
+cd demo/kubeflow
+export TAG=demo-YYYYMMDD-HHMMSS  # same value printed in the build terminal
+IRIS_PIPELINE_IMAGE=ghcr.io/thbertoldi/suse-ai-demo-iris-pipeline:${TAG} \
+KFP_HOST=http://127.0.0.1:18889 \
+  .venv/bin/python submit.py
+```
+
+`submit.py` compiles the pipeline, uploads a new version, disables cache, submits
+the run to the selected profile, waits for completion, and exits non-zero on
+failure. Its defaults target `kubeflow-user-example-com` and `default-editor`.
+Override `KFP_NAMESPACE`, `KFP_USER_ID`, or `KFP_SERVICE_ACCOUNT` when needed.
+
+To keep lifecycle telemetry fresh, add `--recurring`. The command creates the
+named recurring run only if it does not already exist:
+
+```bash
+IRIS_PIPELINE_IMAGE=ghcr.io/thbertoldi/suse-ai-demo-iris-pipeline:${TAG} \
+KFP_HOST=http://127.0.0.1:18889 \
+  .venv/bin/python submit.py --recurring --cron '*/30 * * * *'
+```
+
+## Observable signals
+
+Pipeline steps emit:
+
+- spans named `kubeflow.pipeline.step <step>` plus client spans for Model
+  Registry, KServe deployment, and prediction;
+- `suse.ai.kubeflow.pipeline.step.runs` and
+  `suse.ai.kubeflow.pipeline.step.duration`;
+- `suse.ai.kubeflow.model.accuracy`;
+- `suse.ai.kubeflow.deployment.smoke_test`.
+
+The collector also scrapes the KFP API server and Argo workflow controller and
+performs a synthetic Model Registry API check. In topology, verify these edges:
+
+- `kubeflow-pipelines -> ml-registry.kubeflow`
+- `kubeflow-pipelines -> inference-engine.kserve`
+- `agent-service -> ml-registry.kubeflow`
+- `agent-service -> inference-engine.kserve`
+
+The agent's `[demo:list-models]`, `[demo:predict]`, and `[demo:lifecycle]`
+messages provide deterministic demonstrations while normal natural-language
+tool use remains enabled.
 
 ## Troubleshooting
-- **No agent→kserve edge:** confirm the `predict sklearn-iris` span reaches the
-  collector and `transform/kubeflow-relations` is in the `traces/kubeflow-relations`
-  pipeline. Check the agent can reach the predictor across namespaces.
-- **No agent→registry edge:** the httpx GET must actually hit a URL containing
-  `model-registry`; confirm `MODEL_REGISTRY_URL` and that the REST path returns 200.
-- **No KFP edges:** confirm the step pods carry `OTEL_RESOURCE_ATTRIBUTES` with
-  `suse.ai.component.name=kubeflow-pipelines` and that their spans reach the collector.
-- **Kubeflow OIDC on a full install:** the istio ingress gateway enforces OIDC, so
-  in-cluster calls to the KServe route and to `model-registry-service` get bounced
-  (302 → `/dex/auth`, or 403). The topology edges still form — they are built from
-  the OTel spans (the `predict` CLIENT span's `kserve.inference.service` attribute
-  and the httpx span's `model-registry` URL), not from HTTP success. To get real
-  `200` predictions in-cluster, target the Knative revision service directly, e.g.
-  `http://sklearn-iris-predictor-<revision>.kserve-test.svc.cluster.local/...`
-  (`kubectl -n kserve-test get svc`), which bypasses the gateway.
+
+- **KFP API returns an empty pipeline list:** direct multi-user API calls require
+  `kubeflow-userid`; `submit.py` sets it on every KFP client API.
+- **Deploy step gets 403:** check the RoleBinding generated by
+  `kubeflowPipeline.rbac` and run `kubectl auth can-i` as the real profile
+  service account.
+- **KServe image pull fails:** attach `suse-ai-registry` to
+  `suse-ai-kserve-model`; the deploy step preserves that pull secret.
+- **Storage initializer fails:** confirm the KFP artifact URI exists and the
+  generated `suse-ai-kserve-s3` Secret points to the Kubeflow S3-compatible
+  object store.
+- **Agent receives an OIDC redirect:** use the stable
+  `suse-ai-sklearn-iris.<profile>.svc.cluster.local` URL, not the public KServe
+  route.
+- **Stable Service selects the previous revision:** the smoke step must wait for
+  `latestCreatedRevision == latestReadyRevision`; do not bind from only
+  `latestReadyRevision` during an active rollout.

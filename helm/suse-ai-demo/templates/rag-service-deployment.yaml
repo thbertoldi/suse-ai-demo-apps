@@ -55,7 +55,7 @@ spec:
             - name: OTEL_SERVICE_NAME
               value: "rag-service"
             - name: OTEL_RESOURCE_ATTRIBUTES
-              value: "service.namespace={{ .Values.otel.serviceNamespace }}"
+              value: "service.namespace={{ .Values.otel.serviceNamespace }},suse.ai.managed=true,suse.ai.component.type=application,suse.ai.component.name=rag-service"
           readinessProbe:
             grpc:
               port: 50052

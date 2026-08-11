@@ -1,4 +1,5 @@
 import json
+import math
 import os
 import random
 import time
@@ -22,6 +23,7 @@ MODEL_REGISTRY_URL = os.environ.get(
     "MODEL_REGISTRY_URL",
     "http://model-registry-service.kubeflow.svc.cluster.local:8080",
 )
+MODEL_REGISTRY_BEARER_TOKEN = os.environ.get("MODEL_REGISTRY_BEARER_TOKEN", "demo")
 
 
 TOOL_DESCRIPTIONS = {
@@ -34,12 +36,51 @@ TOOL_DESCRIPTIONS = {
 }
 
 
+def _tool_text(value: object, preferred_key: str) -> str:
+    """Normalize occasionally nested tool arguments emitted by local models."""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict) and preferred_key in value:
+        return _tool_text(value[preferred_key], preferred_key)
+    if value is None:
+        return ""
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, sort_keys=True)
+    return str(value)
+
+
+def _model_registry_headers() -> dict[str, str]:
+    token = MODEL_REGISTRY_BEARER_TOKEN.strip()
+    return {"Authorization": f"Bearer {token}"} if token else {}
+
+
+def _iris_measurement(value: object, name: str) -> float:
+    """Normalize numeric tool arguments emitted as strings or nested values."""
+    if isinstance(value, dict):
+        if name in value:
+            return _iris_measurement(value[name], name)
+        if "value" in value:
+            return _iris_measurement(value["value"], name)
+    if isinstance(value, (list, tuple)) and len(value) == 1:
+        return _iris_measurement(value[0], name)
+    if isinstance(value, bool):
+        raise ValueError(f"{name} must be a positive number")
+    try:
+        measurement = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{name} must be a positive number") from exc
+    if not math.isfinite(measurement) or measurement <= 0:
+        raise ValueError(f"{name} must be a positive number")
+    return measurement
+
+
 def search_docs(query: str, rag_channel: grpc.Channel, top_k: int = 3, tool_call_id: str = "") -> str:
     with execute_tool_span("search_docs", tool_call_id, TOOL_DESCRIPTIONS["search_docs"]) as span:
-        args = json.dumps({"query": query, "top_k": top_k})
+        query_text = _tool_text(query, "query")
+        args = json.dumps({"query": query_text, "top_k": top_k})
         try:
             stub = demo_pb2_grpc.RAGServiceStub(rag_channel)
-            resp = stub.Retrieve(demo_pb2.RetrieveRequest(query=query, top_k=top_k), timeout=120)
+            resp = stub.Retrieve(demo_pb2.RetrieveRequest(query=query_text, top_k=top_k), timeout=120)
             sources = list(resp.sources)
             if sources:
                 result = "\n\n".join(sources)
@@ -92,9 +133,16 @@ def get_current_time(tool_call_id: str = "") -> str:
 def predict(sepal_length: float, sepal_width: float, petal_length: float,
             petal_width: float, tool_call_id: str = "") -> str:
     with execute_tool_span("predict", tool_call_id, TOOL_DESCRIPTIONS["predict"]) as span:
-        payload = {"instances": [[sepal_length, sepal_width, petal_length, petal_width]]}
-        args = json.dumps(payload)
+        raw_values = [sepal_length, sepal_width, petal_length, petal_width]
+        args = json.dumps({"instances": [raw_values]}, default=str)
         try:
+            values = [
+                _iris_measurement(sepal_length, "sepal_length"),
+                _iris_measurement(sepal_width, "sepal_width"),
+                _iris_measurement(petal_length, "petal_length"),
+                _iris_measurement(petal_width, "petal_width"),
+            ]
+            payload = {"instances": [values]}
             # Explicit CLIENT span carries the KServe relation attribute so the
             # collector's transform/kubeflow-relations sets peer.service=kserve.
             with tracer.start_as_current_span(
@@ -119,7 +167,7 @@ def list_models(tool_call_id: str = "") -> str:
         url = f"{MODEL_REGISTRY_URL}/api/model_registry/v1alpha3/registered_models"
         args = json.dumps({"url": url})
         try:
-            resp = httpx.get(url, timeout=30)
+            resp = httpx.get(url, headers=_model_registry_headers(), timeout=30)
             resp.raise_for_status()
             items = resp.json().get("items", [])
             names = [m.get("name", "") for m in items if m.get("name")]

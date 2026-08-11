@@ -1,0 +1,45 @@
+{{- if .Values.kubeflowPipeline.rbac.enabled }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ .Release.Name }}-kfp-kserve-deployer
+  namespace: {{ .Values.kubeflowPipeline.rbac.kserveNamespace }}
+  labels:
+    app.kubernetes.io/name: suse-ai-demo
+    app.kubernetes.io/instance: {{ .Release.Name }}
+rules:
+  - apiGroups:
+      - serving.kserve.io
+    resources:
+      - inferenceservices
+    verbs:
+      - create
+      - patch
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+      - serviceaccounts
+      - services
+    verbs:
+      - create
+      - get
+      - patch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ .Release.Name }}-kfp-kserve-deployer
+  namespace: {{ .Values.kubeflowPipeline.rbac.kserveNamespace }}
+  labels:
+    app.kubernetes.io/name: suse-ai-demo
+    app.kubernetes.io/instance: {{ .Release.Name }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ .Release.Name }}-kfp-kserve-deployer
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.kubeflowPipeline.rbac.serviceAccountName }}
+    namespace: {{ .Values.kubeflowPipeline.rbac.serviceAccountNamespace }}
+{{- end }}
