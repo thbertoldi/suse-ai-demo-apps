@@ -38,6 +38,10 @@ spec:
               value: {{ .Values.agentService.maxIterations | quote }}
             - name: ENABLE_OTEL_CONTENT_EVENTS
               value: {{ .Values.agentService.enableContentEvents | quote }}
+            - name: KSERVE_PREDICT_URL
+              value: {{ .Values.agentService.kservePredictUrl | quote }}
+            - name: MODEL_REGISTRY_URL
+              value: {{ .Values.agentService.modelRegistryUrl | quote }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ .Values.otel.exporterEndpoint | quote }}
             - name: OTEL_SERVICE_NAME

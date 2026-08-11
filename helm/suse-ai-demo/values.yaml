@@ -76,6 +76,8 @@ agentService:
   agentName: demo-agent
   maxIterations: "5"
   enableContentEvents: "false"
+  kservePredictUrl: http://sklearn-iris-predictor-default.kserve-test.svc.cluster.local/v1/models/sklearn-iris:predict
+  modelRegistryUrl: http://model-registry-service.kubeflow.svc.cluster.local:8080
   resources:
     requests:
       cpu: 100m
