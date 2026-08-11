@@ -65,7 +65,18 @@ def create_agent(rag_channel: grpc.Channel):
         """Get the current date and time in UTC."""
         return "placeholder"
 
-    lc_tools = [search_docs, calculate, web_search, get_current_time]
+    @langchain_tool
+    def predict(sepal_length: float, sepal_width: float,
+                petal_length: float, petal_width: float) -> str:
+        """Classify an iris flower species from its sepal/petal measurements using the deployed KServe model."""
+        return "placeholder"
+
+    @langchain_tool
+    def list_models() -> str:
+        """List the machine learning models registered in the Kubeflow model registry."""
+        return "placeholder"
+
+    lc_tools = [search_docs, calculate, web_search, get_current_time, predict, list_models]
     llm_with_tools = llm.bind_tools(lc_tools)
 
     tracer = trace.get_tracer("gen_ai")
@@ -170,6 +181,16 @@ def create_agent(rag_channel: grpc.Channel):
                 result = agent_tools.get_current_time(
                     tool_call_id=tool_call_id,
                 )
+            elif tool_name == "predict":
+                result = agent_tools.predict(
+                    sepal_length=tool_args.get("sepal_length", 0.0),
+                    sepal_width=tool_args.get("sepal_width", 0.0),
+                    petal_length=tool_args.get("petal_length", 0.0),
+                    petal_width=tool_args.get("petal_width", 0.0),
+                    tool_call_id=tool_call_id,
+                )
+            elif tool_name == "list_models":
+                result = agent_tools.list_models(tool_call_id=tool_call_id)
             else:
                 result = f"Unknown tool: {tool_name}"
 
