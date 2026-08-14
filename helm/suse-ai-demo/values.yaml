@@ -31,7 +31,7 @@ ragService:
   vectorDb:
     type: milvus
     url: http://milvus.suse-private-ai.svc.cluster.local:19530
-    collection: demo-docs
+    collection: demo_docs
     username: ""
     password: ""
   enableContentEvents: "false"
@@ -75,7 +75,15 @@ agentService:
   ragServiceAddr: rag-service:50052
   agentName: demo-agent
   maxIterations: "5"
+  deterministicDemoTools: "true"
   enableContentEvents: "false"
+  # The chart's direct Service selects the current Knative predictor pod and
+  # avoids the Kubeflow browser/OIDC gateway used by the generated KServe URL.
+  kservePredictUrl: http://suse-ai-sklearn-iris.kubeflow-user-example-com.svc.cluster.local/v1/models/sklearn-iris:predict
+  modelRegistryUrl: http://model-registry-service.kubeflow.svc.cluster.local:8080
+  # The default Kubeflow AuthorizationPolicy permits in-cluster API calls that
+  # carry an Authorization header. Override or clear this token as appropriate.
+  modelRegistryBearerToken: demo
   resources:
     requests:
       cpu: 100m
@@ -99,6 +107,19 @@ trafficGen:
     limits:
       cpu: 200m
       memory: 128Mi
+
+kubeflowPipeline:
+  inferenceServiceName: sklearn-iris
+  # The successful pipeline smoke-test creates/updates this stable Service so
+  # it selects only the newest ready Knative revision.
+  predictionServiceName: suse-ai-sklearn-iris
+  rbac:
+    enabled: true
+    # KFP runs the demo steps as this service account. Grant it only the
+    # namespaced KServe and credential-object permissions needed by deployment.
+    serviceAccountName: default-editor
+    serviceAccountNamespace: kubeflow-user-example-com
+    kserveNamespace: kubeflow-user-example-com
 
 otel:
   exporterEndpoint: http://opentelemetry-collector.observability.svc.cluster.local:4317

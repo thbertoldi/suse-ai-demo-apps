@@ -45,12 +45,18 @@ CHAT_MESSAGES = [
 ]
 
 AGENT_MESSAGES = [
+    '[demo:lifecycle] {"sepal_length": 6.2, "sepal_width": 3.4, "petal_length": 5.4, "petal_width": 2.3}',
+    "[demo:list-models]",
+    '[demo:predict] {"sepal_length": 5.1, "sepal_width": 3.5, "petal_length": 1.4, "petal_width": 0.2}',
     "Search our docs for what a Kubernetes pod is, then tell me the current time",
     "Calculate 256 * 384 and search for information about container runtimes",
     "What time is it right now?",
     "Search the docs about distributed tracing and also look up what OpenTelemetry is on the web",
     "Calculate 1024 / 16 and tell me the current time",
     "Search our knowledge base for information about container images",
+    "Classify an iris flower with sepal length 5.1, sepal width 3.5, petal length 1.4, petal width 0.2",
+    "Which models are registered in the model registry?",
+    "List the registered models, then classify an iris with sepal 6.2/3.4 and petal 5.4/2.3",
 ]
 
 running = True
@@ -75,6 +81,17 @@ def main():
     metric_reader = PeriodicExportingMetricReader(metric_exporter)
     meter_provider = MeterProvider(resource=resource, metric_readers=[metric_reader])
     metrics.set_meter_provider(meter_provider)
+    meter = metrics.get_meter("suse-ai.demo.traffic")
+    scenario_runs = meter.create_counter(
+        "suse.ai.demo.scenario.runs",
+        unit="{run}",
+        description="Generated demo scenarios by kind and outcome.",
+    )
+    scenario_duration = meter.create_histogram(
+        "suse.ai.demo.scenario.duration",
+        unit="s",
+        description="End-to-end generated demo scenario duration.",
+    )
 
     set_global_textmap(CompositeHTTPPropagator([
         TraceContextTextMapPropagator(),
@@ -110,6 +127,9 @@ def main():
         query_text = query_list[query_indices[query_type] % len(query_list)]
         query_indices[query_type] += 1
 
+        started = time.monotonic()
+        outcome = "success"
+        rpc_status = "OK"
         try:
             if query_type == "rag":
                 logger.info(f"Sending RAG query: {query_text}")
@@ -124,9 +144,21 @@ def main():
                 resp = stub.AgentChat(demo_pb2.AgentChatRequest(message=query_text), timeout=180)
                 logger.info(f"Agent response model={resp.model}, tools_used={len(resp.tool_calls_made)}")
         except grpc.RpcError as e:
+            outcome = "error"
+            rpc_status = e.code().name
             logger.warning(f"gRPC error: {e.code()} {e.details()}")
         except Exception as e:
+            outcome = "error"
+            rpc_status = type(e).__name__
             logger.warning(f"Error: {e}")
+        finally:
+            attributes = {
+                "scenario": query_type,
+                "outcome": outcome,
+                "rpc_status": rpc_status,
+            }
+            scenario_runs.add(1, attributes)
+            scenario_duration.record(time.monotonic() - started, attributes)
 
         jitter = random.uniform(0, 2)
         sleep_time = interval + jitter
