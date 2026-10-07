@@ -18,6 +18,9 @@ operation_duration_histogram = meter.create_histogram(
     name="gen_ai.client.operation.duration",
     description="Duration of GenAI operations",
     unit="s",
+    explicit_bucket_boundaries_advisory=(
+        0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60,
+    ),
 )
 
 tool_calls_counter = meter.create_counter(
@@ -30,6 +33,9 @@ tool_duration_histogram = meter.create_histogram(
     name="suse.ai.agent.tool.duration",
     description="Agent tool execution duration",
     unit="s",
+    explicit_bucket_boundaries_advisory=(
+        0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5, 30,
+    ),
 )
 
 agent_iterations_histogram = meter.create_histogram(
@@ -58,6 +64,7 @@ def invoke_agent_span(agent_name: str, model: str):
             "gen_ai.agent.name": agent_name,
             "gen_ai.agent.id": agent_id,
             "gen_ai.request.model": model,
+            "gen_ai.provider.name": os.environ.get("LLM_PROVIDER", "vllm"),
         },
     ) as span:
         try:
