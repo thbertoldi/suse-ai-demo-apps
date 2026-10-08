@@ -11,6 +11,17 @@ def test_agent_invocation_identifies_its_configured_model_provider(monkeypatch, 
     assert span.attributes["gen_ai.provider.name"] == "vllm"
 
 
+def test_model_endpoint_identity_excludes_credentials_and_url_path(monkeypatch, span_exporter):
+    monkeypatch.setenv("LLM_BASE_URL", "https://test-user:test-password@models.example/v1?token=test-token")
+    with invoke_agent_span("review-agent", "qwen-demo"):
+        pass
+    attrs = span_exporter.get_finished_spans()[0].attributes
+    assert attrs["server.address"] == "models.example"
+    assert attrs["server.port"] == 443
+    assert "test-password" not in str(attrs)
+    assert "test-token" not in str(attrs)
+
+
 def test_tool_duration_histogram_resolves_submillisecond_calls(monkeypatch):
     import importlib.util
     from pathlib import Path

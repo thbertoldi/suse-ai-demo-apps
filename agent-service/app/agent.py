@@ -14,7 +14,7 @@ import operator
 
 from app.otel_instrumentation import (
     invoke_agent_span, token_usage_histogram, operation_duration_histogram,
-    record_agent_execution, ENABLE_CONTENT_EVENTS,
+    record_agent_execution, model_endpoint_attributes, ENABLE_CONTENT_EVENTS,
 )
 from app import tools as agent_tools
 
@@ -88,13 +88,18 @@ def create_agent(rag_channel: grpc.Channel):
         messages = [SystemMessage(content=SYSTEM_PROMPT)] + state["messages"]
 
         start_time = time.monotonic()
+        common_attrs = {
+            "gen_ai.operation.name": "chat",
+            "gen_ai.request.model": llm_model,
+            "gen_ai.provider.name": llm_provider,
+            **model_endpoint_attributes(),
+        }
         with tracer.start_as_current_span(
             f"chat {llm_model}",
             kind=trace.SpanKind.CLIENT,
             attributes={
-                "gen_ai.operation.name": "chat",
-                "gen_ai.request.model": llm_model,
-                "gen_ai.provider.name": llm_provider,
+                **common_attrs,
+                "gen_ai.agent.name": agent_name,
                 "gen_ai.request.temperature": 0.7,
                 "gen_ai.request.max_tokens": 512,
             },
@@ -108,16 +113,12 @@ def create_agent(rag_channel: grpc.Channel):
             try:
                 response = llm_with_tools.invoke(messages)
             except Exception as e:
+                common_attrs["error.type"] = type(e).__name__
                 span.set_status(trace.StatusCode.ERROR, str(e))
                 span.set_attribute("error.type", type(e).__name__)
                 raise
             finally:
                 duration = time.monotonic() - start_time
-                common_attrs = {
-                    "gen_ai.operation.name": "chat",
-                    "gen_ai.request.model": llm_model,
-                    "gen_ai.provider.name": llm_provider,
-                }
                 operation_duration_histogram.record(duration, attributes=common_attrs)
 
             if hasattr(response, "response_metadata"):

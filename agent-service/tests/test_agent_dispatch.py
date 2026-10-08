@@ -1,10 +1,31 @@
 from unittest.mock import MagicMock
+import pytest
 
 import langchain_openai
 from langchain_core.messages import AIMessage
 
 import app.agent as agent_mod
 import app.tools as tools
+
+
+def test_failed_model_call_records_endpoint_and_error_type(monkeypatch, span_exporter):
+    llm = MagicMock()
+    llm.invoke.side_effect = TimeoutError("model deadline")
+    monkeypatch.setattr(langchain_openai.ChatOpenAI, "bind_tools", lambda *args: llm)
+    monkeypatch.setenv("LLM_BASE_URL", "http://models.example:8000/v1")
+    histogram = MagicMock()
+    monkeypatch.setattr(agent_mod, "operation_duration_histogram", histogram)
+
+    with pytest.raises(TimeoutError):
+        agent_mod.create_agent(MagicMock())("Give a brief answer")
+
+    attrs = histogram.record.call_args.kwargs["attributes"]
+    assert attrs["error.type"] == "TimeoutError"
+    assert attrs["server.address"] == "models.example"
+    assert attrs["server.port"] == 8000
+    chat = next(s for s in span_exporter.get_finished_spans() if s.name.startswith("chat "))
+    assert chat.attributes["server.address"] == attrs["server.address"]
+    assert chat.attributes["error.type"] == attrs["error.type"]
 
 
 class FakeBoundLLM:

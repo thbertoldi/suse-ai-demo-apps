@@ -2,6 +2,7 @@ import os
 import time
 import uuid
 from contextlib import contextmanager
+from urllib.parse import urlsplit
 
 from opentelemetry import trace, metrics
 
@@ -53,6 +54,15 @@ agent_runs_counter = meter.create_counter(
 ENABLE_CONTENT_EVENTS = os.environ.get("ENABLE_OTEL_CONTENT_EVENTS", "false").lower() == "true"
 
 
+def model_endpoint_attributes():
+    endpoint = urlsplit(os.environ.get("LLM_BASE_URL", "http://vllm:8000/v1"))
+    attributes = {"server.address": endpoint.hostname or ""}
+    port = endpoint.port or {"http": 80, "https": 443}.get(endpoint.scheme)
+    if port is not None:
+        attributes["server.port"] = port
+    return attributes
+
+
 @contextmanager
 def invoke_agent_span(agent_name: str, model: str):
     agent_id = str(uuid.uuid4())
@@ -65,6 +75,7 @@ def invoke_agent_span(agent_name: str, model: str):
             "gen_ai.agent.id": agent_id,
             "gen_ai.request.model": model,
             "gen_ai.provider.name": os.environ.get("LLM_PROVIDER", "vllm"),
+            **model_endpoint_attributes(),
         },
     ) as span:
         try:
