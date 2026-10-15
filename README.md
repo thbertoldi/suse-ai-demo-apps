@@ -73,6 +73,22 @@ All services export **traces and metrics** via OTLP/gRPC to an OpenTelemetry Col
 - `suse.ai.kubeflow.*` — pipeline step duration/outcome, model accuracy, and
   deployment smoke-test outcome
 
+LLM and embedding durations use seconds with subsecond histogram buckets. Each
+HTTP provider attempt records one duration, including failed attempts with the
+same `error.type` as its GenAI span. Token observations use only reported
+nonnegative integer counts: missing usage stays absent, and a reported zero is
+preserved. Agent tool arguments and results are captured only when
+`ENABLE_OTEL_CONTENT_EVENTS=true`.
+
+Run the client regressions with the real OTel SDK:
+
+```bash
+python -m pip install -r tests/requirements.txt
+python -m unittest discover -s tests -v
+python -m pip install -r agent-service/requirements-dev.txt
+PYTHONPATH=agent-service python -m pytest agent-service/tests -q
+```
+
 ## Prerequisites
 
 - **Go 1.25+** (for building the gateway)

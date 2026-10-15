@@ -1,4 +1,21 @@
 from app.otel_instrumentation import invoke_agent_span
+import pytest
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_tool_arguments_and_results_follow_content_capture_setting(monkeypatch, span_exporter, enabled):
+    from app import otel_instrumentation as otel
+
+    monkeypatch.setattr(otel, "ENABLE_CONTENT_EVENTS", enabled)
+    with otel.execute_tool_span("fixture", "fixture-call") as span:
+        otel.record_tool_result(span, "fixture arguments", "fixture result")
+    exported = span_exporter.get_finished_spans()[0]
+    assert exported.attributes["gen_ai.tool.name"] == "fixture"
+    for key, value in (("arguments", "fixture arguments"), ("result", "fixture result")):
+        if enabled:
+            assert exported.attributes[f"gen_ai.tool.call.{key}"] == value
+        else:
+            assert f"gen_ai.tool.call.{key}" not in exported.attributes
 
 
 def test_agent_invocation_identifies_its_configured_model_provider(monkeypatch, span_exporter):

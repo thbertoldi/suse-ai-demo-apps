@@ -124,26 +124,24 @@ def create_agent(rag_channel: grpc.Channel):
             if hasattr(response, "response_metadata"):
                 meta = response.response_metadata
                 token_usage = meta.get("token_usage", meta.get("usage", {}))
-                input_tokens = token_usage.get("prompt_tokens", 0)
-                output_tokens = token_usage.get("completion_tokens", 0)
+                token_usage = token_usage if isinstance(token_usage, dict) else {}
                 finish_reason = meta.get("finish_reason", "")
                 model_name = meta.get("model_name", meta.get("model", llm_model))
 
                 response_id = meta.get("id", "")
 
                 span.set_attribute("gen_ai.response.model", model_name)
-                span.set_attribute("gen_ai.usage.input_tokens", input_tokens)
-                span.set_attribute("gen_ai.usage.output_tokens", output_tokens)
                 span.set_attribute("gen_ai.response.finish_reasons", [finish_reason])
                 if response_id:
                     span.set_attribute("gen_ai.response.id", response_id)
 
-                token_usage_histogram.record(input_tokens, attributes={
-                    **common_attrs, "gen_ai.token.type": "input",
-                })
-                token_usage_histogram.record(output_tokens, attributes={
-                    **common_attrs, "gen_ai.token.type": "output",
-                })
+                for field, token_type in (("prompt_tokens", "input"), ("completion_tokens", "output")):
+                    count = token_usage.get(field)
+                    if isinstance(count, int) and not isinstance(count, bool) and count >= 0:
+                        span.set_attribute(f"gen_ai.usage.{token_type}_tokens", count)
+                        token_usage_histogram.record(count, attributes={
+                            **common_attrs, "gen_ai.token.type": token_type,
+                        })
 
             if ENABLE_CONTENT_EVENTS:
                 span.add_event("gen_ai.output.messages", attributes={

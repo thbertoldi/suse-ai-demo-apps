@@ -133,4 +133,4 @@ def record_agent_execution(iterations: int, truncated: bool, outcome: str) -> No
 def record_tool_result(span, arguments: str, result: str):
     if ENABLE_CONTENT_EVENTS:
         span.set_attribute("gen_ai.tool.call.arguments", arguments)
-    span.set_attribute("gen_ai.tool.call.result", result)
+        span.set_attribute("gen_ai.tool.call.result", result)
