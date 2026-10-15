@@ -20,8 +20,18 @@ class TrafficTests(unittest.TestCase):
         requests = self.requests
 
         class Handler(http.server.BaseHTTPRequestHandler):
+            models_loaded = False
+
             def log_message(self, *args):
                 pass
+
+            def do_GET(self):
+                requests.append((self.path, None, self.headers.get("Authorization")))
+                Handler.models_loaded = True
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"data": [{"id": "llama3.2"}, {"id": "empty"}]}).encode())
 
             def do_POST(self):
                 body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
@@ -32,7 +42,7 @@ class TrafficTests(unittest.TestCase):
                               "token": "ordinary-demo-user"}
                 elif self.path.endswith("/completed"):
                     result = body
-                elif body["model"] == "empty":
+                elif not Handler.models_loaded or body["model"] == "empty":
                     result = None
                 elif body["stream"]:
                     self.send_header("Content-Type", "text/event-stream")
@@ -70,6 +80,10 @@ class TrafficTests(unittest.TestCase):
             self.assertEqual(result["usage"], {"prompt_tokens": 3, "completion_tokens": 2})
             self.assertEqual(result["stream"], stream)
         self.assertEqual([r[0] for r in self.requests].count("/api/v1/auths/signin"), 1)
+        self.assertEqual([r[0] for r in self.requests].count("/api/models"), 2)
+        for index, (path, _, _) in enumerate(self.requests):
+            if path == "/api/chat/completions":
+                self.assertEqual(self.requests[index - 1][0], "/api/models")
         completed = [r for r in self.requests if r[0] == "/api/chat/completed"]
         self.assertEqual(len(completed), 2)
         self.assertNotEqual(completed[0][1]["id"], completed[1][1]["id"])
@@ -91,6 +105,12 @@ class TrafficTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "no completion"):
             client.chat("empty", "A test")
         self.assertNotIn("/api/chat/completed", [r[0] for r in self.requests])
+
+    def test_unavailable_model_does_not_attempt_generation(self):
+        client = webui.Client(f"http://127.0.0.1:{self.server.server_port}", self.credentials)
+        with self.assertRaisesRegex(RuntimeError, "unavailable"):
+            client.chat("not-shared-with-demo-user", "A test")
+        self.assertNotIn("/api/chat/completions", [r[0] for r in self.requests])
 
 
 if __name__ == "__main__":

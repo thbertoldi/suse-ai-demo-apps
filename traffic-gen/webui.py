@@ -23,13 +23,14 @@ class Client:
         self.timeout = timeout
         self.token = None
 
-    def request(self, path, body, authenticate=True):
+    def request(self, path, body=None, authenticate=True):
         headers = {"Content-Type": "application/json"}
         if authenticate:
             if not self.token:
                 self.login()
             headers["Authorization"] = "Bearer " + self.token
-        return urlopen(Request(self.base_url + path, json.dumps(body).encode(), headers), timeout=self.timeout)
+        data = json.dumps(body).encode() if body is not None else None
+        return urlopen(Request(self.base_url + path, data, headers), timeout=self.timeout)
 
     def login(self):
         credentials = json.loads(self.credentials_file.read_text())
@@ -40,6 +41,13 @@ class Client:
         self.token = session["token"]
 
     def chat(self, model, prompt, stream=False, max_tokens=64):
+        # Like the browser, load the accessible models before selecting one.
+        # On 0.6.41 a worker restart can leave the Ollama routing cache empty
+        # even when persisted custom models already exist in the main registry.
+        with self.request("/api/models") as response:
+            available = json.load(response)
+        if model not in {item["id"] for item in available.get("data", [])}:
+            raise RuntimeError("The configured demo model is unavailable to this user")
         # Open WebUI's supported temporary-chat form avoids accumulating saved
         # conversations and passes ordinary-user ownership checks on 0.6.41.
         chat_id, message_id = "local:" + str(uuid.uuid4()), str(uuid.uuid4())

@@ -350,6 +350,8 @@ The RAG service uses a repository pattern for vector DB access. To add a new bac
 dedicated demo user and temporary `local:` chat IDs. It does not call Ollama
 directly or use an administrator's token. Grant that user read access to the
 chosen model (or a private model alias) and test one chat before enabling traffic.
+Each attempt first lists the user's accessible models, matching the browser's
+initialization of Ollama routing after an Open WebUI worker restart.
 
 Create a private JSON file containing that user's `email` and `password`, then
 mount it using an existing Kubernetes Secret. Keep this file and the Secret's
