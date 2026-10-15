@@ -343,6 +343,58 @@ The RAG service uses a repository pattern for vector DB access. To add a new bac
    ```
 3. Set `VECTOR_DB_TYPE=milvus` and the appropriate `VECTOR_DB_URL`
 
+## Open WebUI conversation traffic
+
+`traffic-gen/webui.py` sends real chats through Open WebUI 0.6.41's
+`/api/chat/completions` and `/api/chat/completed` lifecycle. It uses an ordinary
+dedicated demo user and temporary `local:` chat IDs. It does not call Ollama
+directly or use an administrator's token. Grant that user read access to the
+chosen model (or a private model alias) and test one chat before enabling traffic.
+
+Create a private JSON file containing that user's `email` and `password`, then
+mount it using an existing Kubernetes Secret. Keep this file and the Secret's
+contents out of source control and terminal logs:
+
+```bash
+kubectl -n suse-ai-demo create secret generic webui-demo-user \
+  --from-file=credentials.json=/private/path/credentials.json
+```
+
+Use these Helm values with the existing demo release, preserving its other values:
+
+```yaml
+webuiTraffic:
+  enabled: true
+  baseUrl: http://open-webui.suse-private-ai.svc.cluster.local:80
+  model: llama3.2:latest # Or the private alias granted to the demo user.
+  existingSecret: webui-demo-user
+  intervalSeconds: 60
+  maxRetries: 1
+  streamEvery: 3
+  maxTokens: 64
+```
+
+Build the traffic image from this checkout, or set `webuiTraffic.scriptConfigMap`
+to a frozen ConfigMap containing this exact `webui.py` when using an older image.
+The optional deployment has concurrency one, bounded retries (at most three),
+a 120-second request timeout, no service-account token and a short token limit.
+Every third request streams by default. Logs record each attempt, outcome,
+duration, actual reported usage and temporary chat/message IDs; they omit
+credentials and conversation content. These IDs are not exported as metric labels.
+
+Pause/resume the optional traffic independently of the existing gateway demo:
+
+```bash
+kubectl -n suse-ai-demo scale deployment/webui-traffic --replicas=0
+kubectl -n suse-ai-demo scale deployment/webui-traffic --replicas=1
+```
+
+For local validation, run `python3 -m unittest discover -s traffic-gen/tests -v`
+and `helm lint helm/suse-ai-demo`. Actual GenAI instrumentation and endpoint
+resolution are provided by the in-process Open WebUI integration in the
+`suse-ai-observability-extension` repository; native WebUI HTTP spans alone do not
+measure Ollama token usage or create a resolved client dependency.
+
 ## License
 
 See [LICENSE](LICENSE).

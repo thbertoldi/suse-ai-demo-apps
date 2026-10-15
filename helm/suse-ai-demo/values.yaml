@@ -108,6 +108,19 @@ trafficGen:
       cpu: 200m
       memory: 128Mi
 
+webuiTraffic:
+  enabled: false
+  baseUrl: http://open-webui.suse-private-ai.svc.cluster.local:80
+  model: llama3.2:latest
+  intervalSeconds: 60
+  maxRetries: 1
+  streamEvery: 3
+  maxTokens: 64
+  # credentials.json must contain the email/password of a dedicated ordinary user.
+  existingSecret: ""
+  # Optional frozen webui.py ConfigMap when testing against an older traffic image.
+  scriptConfigMap: ""
+
 kubeflowPipeline:
   inferenceServiceName: sklearn-iris
   # The successful pipeline smoke-test creates/updates this stable Service so
