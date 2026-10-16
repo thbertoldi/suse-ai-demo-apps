@@ -19,11 +19,7 @@ class MilvusVectorStore(VectorStore):
         with tracer.start_as_current_span(
             f"search {self._collection_name}",
             kind=trace.SpanKind.CLIENT,
-            attributes={
-                "db.system": "milvus",
-                "db.operation.name": "search",
-                "db.collection.name": self._collection_name,
-            },
+            attributes=self.span_attributes("milvus", "search"),
         ) as span:
             try:
                 results = self._client.search(
@@ -53,11 +49,7 @@ class MilvusVectorStore(VectorStore):
         with tracer.start_as_current_span(
             f"upsert {self._collection_name}",
             kind=trace.SpanKind.CLIENT,
-            attributes={
-                "db.system": "milvus",
-                "db.operation.name": "upsert",
-                "db.collection.name": self._collection_name,
-            },
+            attributes=self.span_attributes("milvus", "upsert"),
         ) as span:
             try:
                 data = [
