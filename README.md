@@ -52,8 +52,8 @@ All services export **traces and metrics** via OTLP/gRPC to an OpenTelemetry Col
 
 - **GenAI spans** on every LLM and embedding call: `chat {model}`, `embed {model}`
   - Attributes: `gen_ai.operation.name`, `gen_ai.request.model`, `gen_ai.response.model`, `gen_ai.provider.name`, `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`, `gen_ai.response.finish_reasons`, `gen_ai.response.id`
-  - Optional content events: `gen_ai.input.messages`, `gen_ai.output.messages` (enable with `ENABLE_OTEL_CONTENT_EVENTS=true`)
-- **Vector DB spans**: `db.system=qdrant`, `db.operation.name`, `db.collection.name`
+  - Optional content attributes: `gen_ai.input.messages`, `gen_ai.output.messages`, `gen_ai.system_instructions` (enable with `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true`)
+- **Vector DB spans**: `db.system.name`, `db.operation.name`, `db.collection.name`, `server.address`, and explicit `server.port`; upserts also record `db.operation.batch.size`
 - **gRPC spans**: auto-instrumented on all server and client connections
 - **HTTP spans**: auto-instrumented on outbound LLM/embedding calls
 - **Agent spans**: `invoke_agent {agent_name}` with `gen_ai.agent.name`, `gen_ai.agent.id`
@@ -77,8 +77,10 @@ LLM and embedding durations use seconds with subsecond histogram buckets. Each
 HTTP provider attempt records one duration, including failed attempts with the
 same `error.type` as its GenAI span. Token observations use only reported
 nonnegative integer counts: missing usage stays absent, and a reported zero is
-preserved. Agent tool arguments and results are captured only when
-`ENABLE_OTEL_CONTENT_EVENTS=true`.
+preserved. Agent tool arguments and results follow the same content-capture
+opt-in. `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` takes precedence
+over the legacy `ENABLE_OTEL_CONTENT_EVENTS` variable, which remains a fallback
+when the standard variable is unset. Content capture is disabled by default.
 
 Run the client regressions with the real OTel SDK:
 
@@ -254,7 +256,7 @@ See [`helm/suse-ai-demo/values.yaml`](helm/suse-ai-demo/values.yaml) for all con
 | `VECTOR_DB_TYPE` | `qdrant` | Vector DB backend |
 | `VECTOR_DB_URL` | `http://qdrant:6333` | Vector DB address |
 | `VECTOR_DB_COLLECTION` | `demo_docs` | Collection name (portable across Qdrant, Milvus, and OpenSearch) |
-| `ENABLE_OTEL_CONTENT_EVENTS` | `false` | Log input/output messages as span events |
+| `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` | `false` | Capture input/output messages and system instructions as span attributes |
 
 ### LLM Service
 
@@ -264,7 +266,7 @@ See [`helm/suse-ai-demo/values.yaml`](helm/suse-ai-demo/values.yaml) for all con
 | `LLM_BASE_URL` | `http://vllm:8000/v1` | LLM endpoint (OpenAI-compat) |
 | `LLM_MODEL` | `llama3` | LLM model name |
 | `LLM_PROVIDER` | `vllm` | Provider name for OTel attributes |
-| `ENABLE_OTEL_CONTENT_EVENTS` | `false` | Log input/output messages as span events |
+| `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` | `false` | Capture input/output messages and system instructions as span attributes |
 
 ### Agent Service
 
@@ -281,7 +283,7 @@ See [`helm/suse-ai-demo/values.yaml`](helm/suse-ai-demo/values.yaml) for all con
 | `KSERVE_PREDICT_URL` | profile-local stable Service | KServe v1 prediction endpoint |
 | `MODEL_REGISTRY_URL` | Kubeflow registry Service | Model Registry base URL |
 | `MODEL_REGISTRY_BEARER_TOKEN` | `demo` | Demo Authorization header token; use a Secret outside demo environments |
-| `ENABLE_OTEL_CONTENT_EVENTS` | `false` | Log input/output messages as span events |
+| `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` | `false` | Capture messages, system instructions, and tool arguments/results as span attributes |
 
 ### Traffic Generator
 

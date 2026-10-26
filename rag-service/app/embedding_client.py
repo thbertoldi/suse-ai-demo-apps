@@ -2,8 +2,8 @@ import time
 import requests
 from opentelemetry import trace, metrics
 
-tracer = trace.get_tracer("gen_ai")
-meter = metrics.get_meter("gen_ai")
+tracer = trace.get_tracer(__name__)
+meter = metrics.get_meter(__name__)
 
 token_usage_histogram = meter.create_histogram(
     name="gen_ai.client.token.usage",
@@ -59,9 +59,9 @@ def embed(
                     **common_attrs, "gen_ai.token.type": "input",
                 })
 
-            span.set_status(trace.StatusCode.OK)
             return embedding
         except Exception as e:
+            span.record_exception(e)
             span.set_status(trace.StatusCode.ERROR, str(e))
             error_type = type(e).__name__
             if isinstance(e, requests.HTTPError) and e.response is not None:

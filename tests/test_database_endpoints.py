@@ -88,6 +88,19 @@ class DatabaseEndpointsTest(unittest.TestCase):
                         self.assertEqual(span.attributes["db.system.name"], product)
                         self.assertEqual(span.attributes["server.address"], "database.example")
                         self.assertEqual(span.attributes["server.port"], 19530)
+                    upsert = next(s for s in spans if s.attributes["db.operation.name"] == "upsert")
+                    self.assertEqual(upsert.attributes["db.operation.batch.size"], 1)
+                    self.assertNotIn("db.operation.batch_size", upsert.attributes)
+                    exporter.clear()
+                    store._client.search.side_effect = RuntimeError("database unavailable")
+                    store._client.query_points.side_effect = RuntimeError("database unavailable")
+                    with self.assertRaisesRegex(RuntimeError, "database unavailable"):
+                        store.search([0.1, 0.2])
+                    failed = exporter.get_finished_spans()[0]
+                    self.assertEqual(failed.status.status_code, trace.StatusCode.ERROR)
+                    self.assertEqual(failed.attributes["error.type"], "RuntimeError")
+                    self.assertEqual(failed.attributes["server.address"], "database.example")
+                    self.assertTrue(any(event.name == "exception" for event in failed.events))
                 finally:
                     provider.shutdown()
 

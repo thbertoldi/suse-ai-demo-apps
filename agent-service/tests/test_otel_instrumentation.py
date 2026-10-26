@@ -2,6 +2,24 @@ from app.otel_instrumentation import invoke_agent_span
 import pytest
 
 
+@pytest.mark.parametrize("standard, legacy, expected", [
+    (None, None, False),
+    (None, "true", True),
+    ("false", "true", False),
+    ("true", "false", True),
+])
+def test_content_capture_environment_precedence(monkeypatch, standard, legacy, expected):
+    from app import otel_instrumentation as otel
+
+    for name, value in (("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT", standard),
+                        ("ENABLE_OTEL_CONTENT_EVENTS", legacy)):
+        if value is None:
+            monkeypatch.delenv(name, raising=False)
+        else:
+            monkeypatch.setenv(name, value)
+    assert otel._capture_content() is expected
+
+
 @pytest.mark.parametrize("enabled", [False, True])
 def test_tool_arguments_and_results_follow_content_capture_setting(monkeypatch, span_exporter, enabled):
     from app import otel_instrumentation as otel

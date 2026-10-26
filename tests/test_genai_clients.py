@@ -78,7 +78,7 @@ def payload(operation, usage=ABSENT):
     return result
 
 
-def invoke(module, operation, result):
+def invoke(module, operation, result, messages=None):
     post = Mock(side_effect=result) if isinstance(result, Exception) else Mock(return_value=result)
     # Patch this module's clock only; the SDK still uses its actual timestamp clock.
     clock = SimpleNamespace(monotonic=Mock(side_effect=[10.0, 10.4]))
@@ -86,10 +86,42 @@ def invoke(module, operation, result):
         if operation == "embed":
             return module.embed("http://provider.invalid", "requested-model", "fixture", "fixture prompt")
         return module.chat_completion("http://provider.invalid", "requested-model", "fixture",
-                                      [{"role": "user", "content": "fixture prompt"}])
+                                      messages or [{"role": "user", "content": "fixture prompt"}])
 
 
 class GenAIClientTests(unittest.TestCase):
+    def test_content_capture_environment_precedence(self):
+        standard = "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT"
+        legacy = "ENABLE_OTEL_CONTENT_EVENTS"
+        cases = (({}, False), ({legacy: "true"}, True),
+                 ({standard: "false", legacy: "true"}, False),
+                 ({standard: "true", legacy: "false"}, True))
+        for path, _ in CLIENTS[:2]:
+            for environment, expected in cases:
+                with self.subTest(client=path, environment=environment), \
+                        patch.dict("os.environ", environment, clear=True), client(path) as (module, _, _):
+                    self.assertEqual(module._capture_content(), expected)
+
+    def test_opt_in_content_is_recorded_as_span_attributes(self):
+        messages = [{"role": "system", "content": "fixture instructions"},
+                    {"role": "user", "content": "fixture prompt"}]
+        for path, operation in CLIENTS[:2]:
+            for enabled in (False, True):
+                with self.subTest(client=path, enabled=enabled), client(path) as (module, _, exporter):
+                    module.ENABLE_CONTENT_EVENTS = enabled
+                    invoke(module, operation, response(payload(operation)), messages)
+                    span = exporter.get_finished_spans()[0]
+                    self.assertFalse(span.events)
+                    if enabled:
+                        self.assertEqual(json.loads(span.attributes["gen_ai.system_instructions"]),
+                                         [{"type": "text", "content": "fixture instructions"}])
+                        self.assertEqual(json.loads(span.attributes["gen_ai.input.messages"]), messages[1:])
+                        self.assertEqual(json.loads(span.attributes["gen_ai.output.messages"]),
+                                         [{"role": "assistant", "content": "fixture answer"}])
+                    else:
+                        for name in ("system_instructions", "input.messages", "output.messages"):
+                            self.assertNotIn("gen_ai." + name, span.attributes)
+
     def assert_duration(self, reader, error_type=None):
         samples = points(reader, DURATION)
         self.assertEqual(len(samples), 1)
@@ -119,7 +151,7 @@ class GenAIClientTests(unittest.TestCase):
                 spans = exporter.get_finished_spans()
                 self.assertEqual(len(spans), 1)
                 self.assertEqual(spans[0].kind, trace.SpanKind.CLIENT)
-                self.assertEqual(spans[0].status.status_code, trace.StatusCode.OK)
+                self.assertEqual(spans[0].status.status_code, trace.StatusCode.UNSET)
                 self.assertEqual(spans[0].attributes["gen_ai.usage.input_tokens"], 12)
                 self.assertFalse(spans[0].events)
 

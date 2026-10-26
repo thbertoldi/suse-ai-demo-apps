@@ -8,7 +8,7 @@ from qdrant_client.models import (
 
 from .base import Document, VectorStore
 
-tracer = trace.get_tracer("vectordb")
+tracer = trace.get_tracer(__name__)
 
 
 class QdrantVectorStore(VectorStore):
@@ -41,6 +41,7 @@ class QdrantVectorStore(VectorStore):
                 span.set_attribute("db.response.returned_rows", len(docs))
                 return docs
             except Exception as e:
+                span.record_exception(e)
                 span.set_status(trace.StatusCode.ERROR, str(e))
                 span.set_attribute("error.type", type(e).__name__)
                 raise
@@ -64,8 +65,9 @@ class QdrantVectorStore(VectorStore):
                     collection_name=self._collection_name,
                     points=points,
                 )
-                span.set_attribute("db.operation.batch_size", len(documents))
+                span.set_attribute("db.operation.batch.size", len(documents))
             except Exception as e:
+                span.record_exception(e)
                 span.set_status(trace.StatusCode.ERROR, str(e))
                 span.set_attribute("error.type", type(e).__name__)
                 raise

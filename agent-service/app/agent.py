@@ -82,7 +82,7 @@ def create_agent(rag_channel: grpc.Channel):
     lc_tools = [search_docs, calculate, web_search, get_current_time, predict, list_models]
     llm_with_tools = llm.bind_tools(lc_tools)
 
-    tracer = trace.get_tracer("gen_ai")
+    tracer = trace.get_tracer(__name__)
 
     def llm_call(state: AgentState) -> dict:
         messages = [SystemMessage(content=SYSTEM_PROMPT)] + state["messages"]
@@ -105,14 +105,20 @@ def create_agent(rag_channel: grpc.Channel):
             },
         ) as span:
             if ENABLE_CONTENT_EVENTS:
-                input_msgs = [{"role": m.type, "content": m.content} for m in messages if hasattr(m, "content")]
-                span.add_event("gen_ai.input.messages", attributes={
-                    "gen_ai.input.messages": json.dumps(input_msgs),
-                })
+                span.set_attribute(
+                    "gen_ai.system_instructions",
+                    json.dumps([{"type": "text", "content": SYSTEM_PROMPT}]),
+                )
+                input_msgs = [
+                    {"role": m.type, "content": m.content}
+                    for m in state["messages"] if hasattr(m, "content")
+                ]
+                span.set_attribute("gen_ai.input.messages", json.dumps(input_msgs))
 
             try:
                 response = llm_with_tools.invoke(messages)
             except Exception as e:
+                span.record_exception(e)
                 common_attrs["error.type"] = type(e).__name__
                 span.set_status(trace.StatusCode.ERROR, str(e))
                 span.set_attribute("error.type", type(e).__name__)
@@ -144,11 +150,10 @@ def create_agent(rag_channel: grpc.Channel):
                         })
 
             if ENABLE_CONTENT_EVENTS:
-                span.add_event("gen_ai.output.messages", attributes={
-                    "gen_ai.output.messages": json.dumps([{"role": "assistant", "content": response.content}]),
-                })
-
-            span.set_status(trace.StatusCode.OK)
+                span.set_attribute(
+                    "gen_ai.output.messages",
+                    json.dumps([{"role": "assistant", "content": response.content}]),
+                )
 
         return {
             "messages": [response],
@@ -290,7 +295,7 @@ def create_agent(rag_channel: grpc.Channel):
 
             truncated = result.get("llm_calls", 0) >= max_iterations
             if truncated:
-                span.set_attribute("gen_ai.agent.truncated", True)
+                span.set_attribute("app.agent.truncated", True)
 
             last = result["messages"][-1]
             reply = last.content if hasattr(last, "content") else str(last)

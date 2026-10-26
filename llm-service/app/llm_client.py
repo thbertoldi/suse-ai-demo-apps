@@ -4,8 +4,8 @@ import time
 import requests
 from opentelemetry import trace, metrics
 
-tracer = trace.get_tracer("gen_ai")
-meter = metrics.get_meter("gen_ai")
+tracer = trace.get_tracer(__name__)
+meter = metrics.get_meter(__name__)
 
 token_usage_histogram = meter.create_histogram(
     name="gen_ai.client.token.usage",
@@ -22,7 +22,15 @@ operation_duration_histogram = meter.create_histogram(
     ),
 )
 
-ENABLE_CONTENT_EVENTS = os.environ.get("ENABLE_OTEL_CONTENT_EVENTS", "false").lower() == "true"
+def _capture_content() -> bool:
+    # Standard OTel GenAI opt-in; fall back to the legacy var for backward compat.
+    val = os.environ.get("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT")
+    if val is None:
+        val = os.environ.get("ENABLE_OTEL_CONTENT_EVENTS", "false")
+    return val.strip().lower() in ("true", "1", "yes")
+
+
+ENABLE_CONTENT_EVENTS = _capture_content()
 
 
 def chat_completion(
@@ -45,9 +53,14 @@ def chat_completion(
         },
     ) as span:
         if ENABLE_CONTENT_EVENTS:
-            span.add_event("gen_ai.input.messages", attributes={
-                "gen_ai.input.messages": json.dumps(messages),
-            })
+            system_msgs = [m for m in messages if m.get("role") == "system"]
+            input_msgs = [m for m in messages if m.get("role") != "system"]
+            if system_msgs:
+                span.set_attribute(
+                    "gen_ai.system_instructions",
+                    json.dumps([{"type": "text", "content": m.get("content", "")} for m in system_msgs]),
+                )
+            span.set_attribute("gen_ai.input.messages", json.dumps(input_msgs))
 
         start_time = time.monotonic()
         common_attrs = {
@@ -95,13 +108,11 @@ def chat_completion(
                     {"role": "assistant", "content": c.get("message", {}).get("content", "")}
                     for c in choices
                 ]
-                span.add_event("gen_ai.output.messages", attributes={
-                    "gen_ai.output.messages": json.dumps(output_messages),
-                })
+                span.set_attribute("gen_ai.output.messages", json.dumps(output_messages))
 
-            span.set_status(trace.StatusCode.OK)
             return data
         except Exception as e:
+            span.record_exception(e)
             span.set_status(trace.StatusCode.ERROR, str(e))
             error_type = type(e).__name__
             if isinstance(e, requests.HTTPError) and e.response is not None:

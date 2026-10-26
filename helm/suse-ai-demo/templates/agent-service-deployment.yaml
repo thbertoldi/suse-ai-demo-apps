@@ -38,7 +38,7 @@ spec:
               value: {{ .Values.agentService.maxIterations | quote }}
             - name: DEMO_DETERMINISTIC_TOOLS
               value: {{ .Values.agentService.deterministicDemoTools | quote }}
-            - name: ENABLE_OTEL_CONTENT_EVENTS
+            - name: OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT
               value: {{ .Values.agentService.enableContentEvents | quote }}
             - name: KSERVE_PREDICT_URL
               value: {{ .Values.agentService.kservePredictUrl | quote }}
@@ -50,8 +50,12 @@ spec:
               value: {{ .Values.otel.exporterEndpoint | quote }}
             - name: OTEL_SERVICE_NAME
               value: "agent-service"
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
             - name: OTEL_RESOURCE_ATTRIBUTES
-              value: "service.namespace={{ .Values.otel.serviceNamespace }},suse.ai.managed=true,suse.ai.component.type=agent,suse.ai.component.name=agent-service"
+              value: "service.namespace={{ .Values.otel.serviceNamespace }},service.version={{ .Chart.AppVersion }},deployment.environment.name={{ .Values.otel.environment }},service.instance.id=$(POD_NAME),suse.ai.managed=true,suse.ai.component.type=agent,suse.ai.component.name=agent-service"
           readinessProbe:
             grpc:
               port: 50054

@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"go.opentelemetry.io/otel"
@@ -16,7 +17,7 @@ import (
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	semconv "go.opentelemetry.io/otel/semconv/v1.40.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.41.0"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	healthgrpc "google.golang.org/grpc/health"
@@ -61,8 +62,14 @@ func setupOTel(ctx context.Context, serviceName string) (func(), error) {
 	))
 
 	return func() {
-		_ = tp.Shutdown(ctx)
-		_ = mp.Shutdown(ctx)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := tp.Shutdown(shutdownCtx); err != nil {
+			log.Printf("error shutting down tracer provider: %v", err)
+		}
+		if err := mp.Shutdown(shutdownCtx); err != nil {
+			log.Printf("error shutting down meter provider: %v", err)
+		}
 	}, nil
 }
 

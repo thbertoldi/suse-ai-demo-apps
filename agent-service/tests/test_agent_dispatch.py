@@ -1,4 +1,5 @@
 from unittest.mock import MagicMock
+import json
 import pytest
 
 import langchain_openai
@@ -6,6 +7,30 @@ from langchain_core.messages import AIMessage
 
 import app.agent as agent_mod
 import app.tools as tools
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_agent_content_attributes_follow_opt_in(monkeypatch, span_exporter, enabled):
+    llm = MagicMock()
+    llm.invoke.return_value = AIMessage(content="fixture answer")
+    monkeypatch.setattr(langchain_openai.ChatOpenAI, "bind_tools", lambda *args: llm)
+    monkeypatch.setattr(agent_mod, "ENABLE_CONTENT_EVENTS", enabled)
+    agent_mod.create_agent(MagicMock())("fixture prompt")
+    chat = next(s for s in span_exporter.get_finished_spans() if s.name.startswith("chat "))
+    assert not chat.events
+    if enabled:
+        assert json.loads(chat.attributes["gen_ai.system_instructions"]) == [
+            {"type": "text", "content": agent_mod.SYSTEM_PROMPT},
+        ]
+        assert json.loads(chat.attributes["gen_ai.input.messages"]) == [
+            {"role": "human", "content": "fixture prompt"},
+        ]
+        assert json.loads(chat.attributes["gen_ai.output.messages"]) == [
+            {"role": "assistant", "content": "fixture answer"},
+        ]
+    else:
+        for name in ("system_instructions", "input.messages", "output.messages"):
+            assert "gen_ai." + name not in chat.attributes
 
 
 @pytest.mark.parametrize("usage, expected", [
