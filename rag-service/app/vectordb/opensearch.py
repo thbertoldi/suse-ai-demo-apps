@@ -24,11 +24,7 @@ class OpenSearchVectorStore(VectorStore):
         with tracer.start_as_current_span(
             f"search {self._collection_name}",
             kind=trace.SpanKind.CLIENT,
-            attributes={
-                "db.system.name": "opensearch",
-                "db.operation.name": "search",
-                "db.collection.name": self._collection_name,
-            },
+            attributes=self.span_attributes("opensearch", "search"),
         ) as span:
             try:
                 body = {
@@ -64,11 +60,7 @@ class OpenSearchVectorStore(VectorStore):
         with tracer.start_as_current_span(
             f"upsert {self._collection_name}",
             kind=trace.SpanKind.CLIENT,
-            attributes={
-                "db.system.name": "opensearch",
-                "db.operation.name": "upsert",
-                "db.collection.name": self._collection_name,
-            },
+            attributes=self.span_attributes("opensearch", "upsert"),
         ) as span:
             try:
                 bulk_body: list[dict] = []

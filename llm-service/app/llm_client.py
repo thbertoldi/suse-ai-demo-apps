@@ -17,6 +17,9 @@ operation_duration_histogram = meter.create_histogram(
     name="gen_ai.client.operation.duration",
     description="Duration of GenAI operations",
     unit="s",
+    explicit_bucket_boundaries_advisory=(
+        0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120,
+    ),
 )
 
 def _capture_content() -> bool:
@@ -60,7 +63,11 @@ def chat_completion(
             span.set_attribute("gen_ai.input.messages", json.dumps(input_msgs))
 
         start_time = time.monotonic()
-        error_type = None
+        common_attrs = {
+            "gen_ai.operation.name": "chat",
+            "gen_ai.request.model": model,
+            "gen_ai.provider.name": provider,
+        }
         try:
             response = requests.post(
                 f"{base_url}/chat/completions",
@@ -74,50 +81,45 @@ def chat_completion(
             )
             response.raise_for_status()
             data = response.json()
-        except requests.RequestException as e:
-            error_type = type(e).__name__
-            if hasattr(e, "response") and e.response is not None:
-                error_type = str(e.response.status_code)
+
+            response_model = data.get("model", model)
+            usage = data.get("usage")
+            usage = usage if isinstance(usage, dict) else {}
+            choices = data.get("choices", [])
+            finish_reasons = [c.get("finish_reason", "") for c in choices]
+            response_id = data.get("id", "")
+
+            span.set_attribute("gen_ai.response.model", response_model)
+            span.set_attribute("gen_ai.response.finish_reasons", finish_reasons)
+            span.set_attribute("gen_ai.response.id", response_id)
+
+            # Missing usage is unknown, not zero. Preserve an explicitly reported
+            # zero while rejecting malformed, negative or boolean token counts.
+            for field, token_type in (("prompt_tokens", "input"), ("completion_tokens", "output")):
+                count = usage.get(field)
+                if isinstance(count, int) and not isinstance(count, bool) and count >= 0:
+                    span.set_attribute(f"gen_ai.usage.{token_type}_tokens", count)
+                    token_usage_histogram.record(count, attributes={
+                        **common_attrs, "gen_ai.token.type": token_type,
+                    })
+
+            if ENABLE_CONTENT_EVENTS and choices:
+                output_messages = [
+                    {"role": "assistant", "content": c.get("message", {}).get("content", "")}
+                    for c in choices
+                ]
+                span.set_attribute("gen_ai.output.messages", json.dumps(output_messages))
+
+            return data
+        except Exception as e:
             span.record_exception(e)
             span.set_status(trace.StatusCode.ERROR, str(e))
+            error_type = type(e).__name__
+            if isinstance(e, requests.HTTPError) and e.response is not None:
+                error_type = str(e.response.status_code)
             span.set_attribute("error.type", error_type)
+            common_attrs["error.type"] = error_type
             raise
         finally:
             duration = time.monotonic() - start_time
-            common_attrs = {
-                "gen_ai.operation.name": "chat",
-                "gen_ai.request.model": model,
-                "gen_ai.provider.name": provider,
-            }
-            duration_attrs = {**common_attrs, "error.type": error_type} if error_type else common_attrs
-            operation_duration_histogram.record(duration, attributes=duration_attrs)
-
-        response_model = data.get("model", model)
-        usage = data.get("usage", {})
-        input_tokens = usage.get("prompt_tokens", 0)
-        output_tokens = usage.get("completion_tokens", 0)
-        choices = data.get("choices", [])
-        finish_reasons = [c.get("finish_reason", "") for c in choices]
-        response_id = data.get("id", "")
-
-        span.set_attribute("gen_ai.response.model", response_model)
-        span.set_attribute("gen_ai.usage.input_tokens", input_tokens)
-        span.set_attribute("gen_ai.usage.output_tokens", output_tokens)
-        span.set_attribute("gen_ai.response.finish_reasons", finish_reasons)
-        span.set_attribute("gen_ai.response.id", response_id)
-
-        token_usage_histogram.record(input_tokens, attributes={
-            **common_attrs, "gen_ai.token.type": "input",
-        })
-        token_usage_histogram.record(output_tokens, attributes={
-            **common_attrs, "gen_ai.token.type": "output",
-        })
-
-        if ENABLE_CONTENT_EVENTS and choices:
-            output_messages = [
-                {"role": "assistant", "content": c.get("message", {}).get("content", "")}
-                for c in choices
-            ]
-            span.set_attribute("gen_ai.output.messages", json.dumps(output_messages))
-
-        return data
+            operation_duration_histogram.record(duration, attributes=common_attrs)

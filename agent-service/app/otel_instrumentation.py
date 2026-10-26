@@ -1,6 +1,8 @@
 import os
+import time
 import uuid
 from contextlib import contextmanager
+from urllib.parse import urlsplit
 
 from opentelemetry import trace, metrics
 
@@ -17,6 +19,36 @@ operation_duration_histogram = meter.create_histogram(
     name="gen_ai.client.operation.duration",
     description="Duration of GenAI operations",
     unit="s",
+    explicit_bucket_boundaries_advisory=(
+        0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60,
+    ),
+)
+
+tool_calls_counter = meter.create_counter(
+    name="suse.ai.agent.tool.calls",
+    description="Agent tool calls by tool and outcome",
+    unit="{call}",
+)
+
+tool_duration_histogram = meter.create_histogram(
+    name="suse.ai.agent.tool.duration",
+    description="Agent tool execution duration",
+    unit="s",
+    explicit_bucket_boundaries_advisory=(
+        0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5, 30,
+    ),
+)
+
+agent_iterations_histogram = meter.create_histogram(
+    name="suse.ai.agent.iterations",
+    description="LLM iterations used per agent invocation",
+    unit="1",
+)
+
+agent_runs_counter = meter.create_counter(
+    name="suse.ai.agent.runs",
+    description="Agent invocations by outcome and truncation",
+    unit="{run}",
 )
 
 def _capture_content() -> bool:
@@ -30,6 +62,15 @@ def _capture_content() -> bool:
 ENABLE_CONTENT_EVENTS = _capture_content()
 
 
+def model_endpoint_attributes():
+    endpoint = urlsplit(os.environ.get("LLM_BASE_URL", "http://vllm:8000/v1"))
+    attributes = {"server.address": endpoint.hostname or ""}
+    port = endpoint.port or {"http": 80, "https": 443}.get(endpoint.scheme)
+    if port is not None:
+        attributes["server.port"] = port
+    return attributes
+
+
 @contextmanager
 def invoke_agent_span(agent_name: str, model: str):
     agent_id = str(uuid.uuid4())
@@ -41,6 +82,8 @@ def invoke_agent_span(agent_name: str, model: str):
             "gen_ai.agent.name": agent_name,
             "gen_ai.agent.id": agent_id,
             "gen_ai.request.model": model,
+            "gen_ai.provider.name": os.environ.get("LLM_PROVIDER", "vllm"),
+            **model_endpoint_attributes(),
         },
     ) as span:
         try:
@@ -54,6 +97,7 @@ def invoke_agent_span(agent_name: str, model: str):
 
 @contextmanager
 def execute_tool_span(tool_name: str, tool_call_id: str, tool_description: str = ""):
+    started = time.monotonic()
     with tracer.start_as_current_span(
         f"execute_tool {tool_name}",
         kind=trace.SpanKind.INTERNAL,
@@ -72,9 +116,30 @@ def execute_tool_span(tool_name: str, tool_call_id: str, tool_description: str =
             span.set_status(trace.StatusCode.ERROR, str(e))
             span.set_attribute("error.type", type(e).__name__)
             raise
+        finally:
+            outcome = (
+                "error"
+                if span.status.status_code == trace.StatusCode.ERROR
+                else "success"
+            )
+            attributes = {"tool_name": tool_name, "outcome": outcome}
+            tool_calls_counter.add(1, attributes)
+            tool_duration_histogram.record(
+                time.monotonic() - started,
+                attributes,
+            )
+
+
+def record_agent_execution(iterations: int, truncated: bool, outcome: str) -> None:
+    attributes = {
+        "outcome": outcome,
+        "truncated": str(truncated).lower(),
+    }
+    agent_iterations_histogram.record(iterations, attributes)
+    agent_runs_counter.add(1, attributes)
 
 
 def record_tool_result(span, arguments: str, result: str):
     if ENABLE_CONTENT_EVENTS:
         span.set_attribute("gen_ai.tool.call.arguments", arguments)
-    span.set_attribute("gen_ai.tool.call.result", result)
+        span.set_attribute("gen_ai.tool.call.result", result)

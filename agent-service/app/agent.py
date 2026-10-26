@@ -14,7 +14,7 @@ import operator
 
 from app.otel_instrumentation import (
     invoke_agent_span, token_usage_histogram, operation_duration_histogram,
-    ENABLE_CONTENT_EVENTS,
+    record_agent_execution, model_endpoint_attributes, ENABLE_CONTENT_EVENTS,
 )
 from app import tools as agent_tools
 
@@ -34,6 +34,9 @@ def create_agent(rag_channel: grpc.Channel):
     llm_provider = os.environ.get("LLM_PROVIDER", "vllm")
     agent_name = os.environ.get("AGENT_NAME", "demo-agent")
     max_iterations = int(os.environ.get("AGENT_MAX_ITERATIONS", "5"))
+    deterministic_tools = (
+        os.environ.get("DEMO_DETERMINISTIC_TOOLS", "true").lower() == "true"
+    )
 
     llm = ChatOpenAI(
         base_url=llm_base_url,
@@ -65,7 +68,18 @@ def create_agent(rag_channel: grpc.Channel):
         """Get the current date and time in UTC."""
         return "placeholder"
 
-    lc_tools = [search_docs, calculate, web_search, get_current_time]
+    @langchain_tool
+    def predict(sepal_length: float, sepal_width: float,
+                petal_length: float, petal_width: float) -> str:
+        """Classify an iris flower species from its sepal/petal measurements using the deployed KServe model."""
+        return "placeholder"
+
+    @langchain_tool
+    def list_models() -> str:
+        """List the machine learning models registered in the Kubeflow model registry."""
+        return "placeholder"
+
+    lc_tools = [search_docs, calculate, web_search, get_current_time, predict, list_models]
     llm_with_tools = llm.bind_tools(lc_tools)
 
     tracer = trace.get_tracer(__name__)
@@ -74,13 +88,18 @@ def create_agent(rag_channel: grpc.Channel):
         messages = [SystemMessage(content=SYSTEM_PROMPT)] + state["messages"]
 
         start_time = time.monotonic()
+        common_attrs = {
+            "gen_ai.operation.name": "chat",
+            "gen_ai.request.model": llm_model,
+            "gen_ai.provider.name": llm_provider,
+            **model_endpoint_attributes(),
+        }
         with tracer.start_as_current_span(
             f"chat {llm_model}",
             kind=trace.SpanKind.CLIENT,
             attributes={
-                "gen_ai.operation.name": "chat",
-                "gen_ai.request.model": llm_model,
-                "gen_ai.provider.name": llm_provider,
+                **common_attrs,
+                "gen_ai.agent.name": agent_name,
                 "gen_ai.request.temperature": 0.7,
                 "gen_ai.request.max_tokens": 512,
             },
@@ -96,48 +115,39 @@ def create_agent(rag_channel: grpc.Channel):
                 ]
                 span.set_attribute("gen_ai.input.messages", json.dumps(input_msgs))
 
-            error_type = None
             try:
                 response = llm_with_tools.invoke(messages)
             except Exception as e:
-                error_type = type(e).__name__
                 span.record_exception(e)
+                common_attrs["error.type"] = type(e).__name__
                 span.set_status(trace.StatusCode.ERROR, str(e))
-                span.set_attribute("error.type", error_type)
+                span.set_attribute("error.type", type(e).__name__)
                 raise
             finally:
                 duration = time.monotonic() - start_time
-                common_attrs = {
-                    "gen_ai.operation.name": "chat",
-                    "gen_ai.request.model": llm_model,
-                    "gen_ai.provider.name": llm_provider,
-                }
-                duration_attrs = {**common_attrs, "error.type": error_type} if error_type else common_attrs
-                operation_duration_histogram.record(duration, attributes=duration_attrs)
+                operation_duration_histogram.record(duration, attributes=common_attrs)
 
             if hasattr(response, "response_metadata"):
                 meta = response.response_metadata
                 token_usage = meta.get("token_usage", meta.get("usage", {}))
-                input_tokens = token_usage.get("prompt_tokens", 0)
-                output_tokens = token_usage.get("completion_tokens", 0)
+                token_usage = token_usage if isinstance(token_usage, dict) else {}
                 finish_reason = meta.get("finish_reason", "")
                 model_name = meta.get("model_name", meta.get("model", llm_model))
 
                 response_id = meta.get("id", "")
 
                 span.set_attribute("gen_ai.response.model", model_name)
-                span.set_attribute("gen_ai.usage.input_tokens", input_tokens)
-                span.set_attribute("gen_ai.usage.output_tokens", output_tokens)
                 span.set_attribute("gen_ai.response.finish_reasons", [finish_reason])
                 if response_id:
                     span.set_attribute("gen_ai.response.id", response_id)
 
-                token_usage_histogram.record(input_tokens, attributes={
-                    **common_attrs, "gen_ai.token.type": "input",
-                })
-                token_usage_histogram.record(output_tokens, attributes={
-                    **common_attrs, "gen_ai.token.type": "output",
-                })
+                for field, token_type in (("prompt_tokens", "input"), ("completion_tokens", "output")):
+                    count = token_usage.get(field)
+                    if isinstance(count, int) and not isinstance(count, bool) and count >= 0:
+                        span.set_attribute(f"gen_ai.usage.{token_type}_tokens", count)
+                        token_usage_histogram.record(count, attributes={
+                            **common_attrs, "gen_ai.token.type": token_type,
+                        })
 
             if ENABLE_CONTENT_EVENTS:
                 span.set_attribute(
@@ -178,6 +188,16 @@ def create_agent(rag_channel: grpc.Channel):
                 result = agent_tools.get_current_time(
                     tool_call_id=tool_call_id,
                 )
+            elif tool_name == "predict":
+                result = agent_tools.predict(
+                    sepal_length=tool_args.get("sepal_length", 0.0),
+                    sepal_width=tool_args.get("sepal_width", 0.0),
+                    petal_length=tool_args.get("petal_length", 0.0),
+                    petal_width=tool_args.get("petal_width", 0.0),
+                    tool_call_id=tool_call_id,
+                )
+            elif tool_name == "list_models":
+                result = agent_tools.list_models(tool_call_id=tool_call_id)
             else:
                 result = f"Unknown tool: {tool_name}"
 
@@ -202,14 +222,79 @@ def create_agent(rag_channel: grpc.Channel):
 
     compiled = graph.compile()
 
+    def deterministic_demo(message: str) -> dict | None:
+        """Run explicit demo scenarios without relying on local-LLM tool choice."""
+        if not deterministic_tools or not message.startswith("[demo:"):
+            return None
+
+        command, _, payload_text = message.partition("]")
+        command += "]"
+        payload_text = payload_text.strip()
+        calls = []
+        replies = []
+
+        if command in ("[demo:list-models]", "[demo:lifecycle]"):
+            result = agent_tools.list_models(tool_call_id="demo-list-models")
+            calls.append({
+                "name": "list_models",
+                "arguments": "{}",
+                "result": result,
+            })
+            replies.append(f"registered models: {result}")
+
+        if command in ("[demo:predict]", "[demo:lifecycle]"):
+            values = {
+                "sepal_length": 5.1,
+                "sepal_width": 3.5,
+                "petal_length": 1.4,
+                "petal_width": 0.2,
+            }
+            if payload_text:
+                supplied = json.loads(payload_text)
+                values.update({
+                    key: float(supplied[key])
+                    for key in values
+                    if key in supplied
+                })
+            result = agent_tools.predict(
+                **values,
+                tool_call_id="demo-predict",
+            )
+            calls.append({
+                "name": "predict",
+                "arguments": json.dumps(values, sort_keys=True),
+                "result": result,
+            })
+            replies.append(f"iris prediction: {result}")
+
+        if not calls:
+            raise ValueError(f"unknown deterministic demo command: {command}")
+
+        return {
+            "reply": "; ".join(replies),
+            "model": "deterministic-demo",
+            "tool_calls_made": calls,
+        }
+
     def run_agent(message: str) -> dict:
         with invoke_agent_span(agent_name, llm_model) as span:
-            result = compiled.invoke({
-                "messages": [HumanMessage(content=message)],
-                "llm_calls": 0,
-            })
+            try:
+                deterministic_result = deterministic_demo(message)
+                if deterministic_result is not None:
+                    span.set_attribute("suse.ai.demo.scenario", message.partition("]")[0] + "]")
+                    record_agent_execution(0, False, "success")
+                    return deterministic_result
 
-            if result.get("llm_calls", 0) >= max_iterations:
+                result = compiled.invoke({
+                    "messages": [HumanMessage(content=message)],
+                    "llm_calls": 0,
+                })
+            except Exception:
+                record_agent_execution(0, False, "error")
+                raise
+
+            truncated = result.get("llm_calls", 0) >= max_iterations
+            if truncated:
                 span.set_attribute("app.agent.truncated", True)
 
             last = result["messages"][-1]
@@ -236,6 +321,12 @@ def create_agent(rag_channel: grpc.Channel):
             model_used = llm_model
             if hasattr(last, "response_metadata"):
                 model_used = last.response_metadata.get("model_name", last.response_metadata.get("model", llm_model))
+
+            record_agent_execution(
+                result.get("llm_calls", 0),
+                truncated,
+                "success",
+            )
 
             return {
                 "reply": reply,

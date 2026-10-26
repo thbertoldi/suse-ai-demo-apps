@@ -33,7 +33,7 @@ spec:
                 fieldRef:
                   fieldPath: metadata.name
             - name: OTEL_RESOURCE_ATTRIBUTES
-              value: "service.namespace={{ .Values.otel.serviceNamespace }},service.version={{ .Chart.AppVersion }},deployment.environment.name={{ .Values.otel.environment }},service.instance.id=$(POD_NAME)"
+              value: "service.namespace={{ .Values.otel.serviceNamespace }},service.version={{ .Chart.AppVersion }},deployment.environment.name={{ .Values.otel.environment }},service.instance.id=$(POD_NAME),suse.ai.managed=true,suse.ai.component.type=application,suse.ai.component.name=traffic-gen"
           resources:
             {{- toYaml .Values.trafficGen.resources | nindent 12 }}
 {{- end }}

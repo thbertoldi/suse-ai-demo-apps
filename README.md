@@ -24,7 +24,13 @@ A set of microservices forming a **RAG (Retrieval-Augmented Generation) pipeline
                                               +-------> [vLLM / Ollama]
                                               |
                                               | gRPC (search_docs tool)
-                                              '-------> [RAG Service]
+                                              +-------> [RAG Service]
+                                              | HTTP (predict tool)
+                                              +-------> [KServe / Iris]
+                                              | HTTP (list_models tool)
+                                              '-------> [Kubeflow Model Registry]
+
+  [Kubeflow Pipelines] ---> [Model Registry] ---> [KServe / Iris revision]
 ```
 
 | Service | Language | Description | Port |
@@ -32,8 +38,9 @@ A set of microservices forming a **RAG (Retrieval-Augmented Generation) pipeline
 | **Gateway** | Go | gRPC entry point. Routes `Query` requests to the RAG service and `Chat` requests to the LLM service. | 50051 |
 | **RAG Service** | Python | Embeds the user query, searches Qdrant for relevant documents, builds a context-augmented prompt, and calls Ollama for an answer. | 50052 |
 | **LLM Service** | Python | Forwards prompts directly to vLLM for general-purpose Q&A (no retrieval). | 50053 |
-| **Traffic Generator** | Python | Sends a round-robin mix of RAG and Chat queries to the Gateway at a configurable interval, producing continuous telemetry. | - |
-| **Agent Service** | Python | LangGraph ReAct agent with tools (search_docs, calculate, web_search, get_current_time). Produces `invoke_agent` and `execute_tool` OTel spans. | 50054 |
+| **Traffic Generator** | Python | Sends RAG, Chat, and Agent scenarios to the Gateway, including deterministic Kubeflow lifecycle calls. | - |
+| **Agent Service** | Python | LangGraph agent with document, calculation, time, KServe prediction, and Model Registry tools. Produces `invoke_agent` and `execute_tool` OTel spans. | 50054 |
+| **Iris pipeline** | Python/KFP | Trains and evaluates an Iris model, registers its exact artifact, deploys it to KServe, and smoke-tests the ready revision. | - |
 
 Two different LLM backends (Ollama and vLLM) are used intentionally to demonstrate distributed tracing across heterogeneous GenAI providers.
 
@@ -45,12 +52,14 @@ All services export **traces and metrics** via OTLP/gRPC to an OpenTelemetry Col
 
 - **GenAI spans** on every LLM and embedding call: `chat {model}`, `embed {model}`
   - Attributes: `gen_ai.operation.name`, `gen_ai.request.model`, `gen_ai.response.model`, `gen_ai.provider.name`, `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`, `gen_ai.response.finish_reasons`, `gen_ai.response.id`
-  - Optional content events: `gen_ai.input.messages`, `gen_ai.output.messages` (enable with `ENABLE_OTEL_CONTENT_EVENTS=true`)
-- **Vector DB spans**: `db.system=qdrant`, `db.operation.name`, `db.collection.name`
+  - Optional content attributes: `gen_ai.input.messages`, `gen_ai.output.messages`, `gen_ai.system_instructions` (enable with `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true`)
+- **Vector DB spans**: `db.system.name`, `db.operation.name`, `db.collection.name`, `server.address`, and explicit `server.port`; upserts also record `db.operation.batch.size`
 - **gRPC spans**: auto-instrumented on all server and client connections
 - **HTTP spans**: auto-instrumented on outbound LLM/embedding calls
 - **Agent spans**: `invoke_agent {agent_name}` with `gen_ai.agent.name`, `gen_ai.agent.id`
 - **Tool execution spans**: `execute_tool {tool_name}` with `gen_ai.tool.name`, `gen_ai.tool.type`, `gen_ai.tool.call.id`
+- **Kubeflow lifecycle spans**: step, Model Registry, KServe deployment, and
+  prediction spans carrying SUSE AI product-relation attributes
 - **W3C TraceContext** propagation across all hops
 
 ### Metrics
@@ -58,6 +67,29 @@ All services export **traces and metrics** via OTLP/gRPC to an OpenTelemetry Col
 - `gen_ai.client.token.usage` — histogram of token counts by model, operation, and token type
 - `gen_ai.client.operation.duration` — histogram of LLM/embedding call duration
 - Standard gRPC and HTTP server/client metrics from auto-instrumentation
+- `suse.ai.agent.*` — tool rate/duration and agent iterations/outcomes
+- `suse.ai.rag.*` — retrieval yield, no-hit count, context size, and request duration
+- `suse.ai.demo.scenario.*` — generated scenario outcomes and end-to-end duration
+- `suse.ai.kubeflow.*` — pipeline step duration/outcome, model accuracy, and
+  deployment smoke-test outcome
+
+LLM and embedding durations use seconds with subsecond histogram buckets. Each
+HTTP provider attempt records one duration, including failed attempts with the
+same `error.type` as its GenAI span. Token observations use only reported
+nonnegative integer counts: missing usage stays absent, and a reported zero is
+preserved. Agent tool arguments and results follow the same content-capture
+opt-in. `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` takes precedence
+over the legacy `ENABLE_OTEL_CONTENT_EVENTS` variable, which remains a fallback
+when the standard variable is unset. Content capture is disabled by default.
+
+Run the client regressions with the real OTel SDK:
+
+```bash
+python -m pip install -r tests/requirements.txt
+python -m unittest discover -s tests -v
+python -m pip install -r agent-service/requirements-dev.txt
+PYTHONPATH=agent-service python -m pytest agent-service/tests -q
+```
 
 ## Prerequisites
 
@@ -66,12 +98,22 @@ All services export **traces and metrics** via OTLP/gRPC to an OpenTelemetry Col
 - **protoc** with `protoc-gen-go`, `protoc-gen-go-grpc`, and `grpcio-tools` (for regenerating proto stubs)
 - **Docker** (for building container images)
 - **Helm 3** (for deploying to Kubernetes)
+- **Kubeflow Pipelines, Model Registry, and KServe** (for the optional real
+  model-lifecycle demo)
 
 External services (not included, must be running separately):
 - [Qdrant](https://qdrant.tech/) — vector database
 - [Ollama](https://ollama.ai/) — LLM backend for the RAG service
 - [vLLM](https://docs.vllm.ai/) — LLM backend for the LLM service
 - An [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/) — receives traces and metrics
+
+Pull every configured Ollama model before starting traffic. The default RAG
+configuration requires both `llama3.2` and `nomic-embed-text`:
+
+```bash
+ollama pull llama3.2
+ollama pull nomic-embed-text
+```
 
 ## Building
 
@@ -85,6 +127,7 @@ docker build -t suse-ai-demo-rag-service ./rag-service
 docker build -t suse-ai-demo-llm-service ./llm-service
 docker build -t suse-ai-demo-agent-service ./agent-service
 docker build -t suse-ai-demo-traffic-gen ./traffic-gen
+docker build -t suse-ai-demo-iris-pipeline ./demo/kubeflow
 ```
 
 Images are also built automatically via GitHub Actions on every push to `main` and on version tags, and published to `ghcr.io`.
@@ -129,7 +172,7 @@ export LLM_PROVIDER=ollama
 export EMBEDDING_BASE_URL=http://localhost:11434/v1
 export EMBEDDING_MODEL=nomic-embed-text
 export VECTOR_DB_URL=http://localhost:6333
-export VECTOR_DB_COLLECTION=demo-docs
+export VECTOR_DB_COLLECTION=demo_docs
 export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
 python -m app.main
 
@@ -167,7 +210,16 @@ python -m app.main
 
 ## Deploying with Helm
 
-The Helm chart deploys the 5 services we build. External dependencies (Qdrant, Ollama, vLLM, OTel Collector) must already be running in the cluster.
+The Helm chart deploys the five always-on services. External dependencies
+(Milvus or Qdrant, Ollama or vLLM, and the OTel Collector) must already be
+running. It also creates the namespaced Role and RoleBinding that let a
+configured KFP profile service account manage the demo KServe
+`InferenceService`, its S3 Secret and ServiceAccount, and the revision-pinned
+prediction Service; see `kubeflowPipeline.rbac` in the values file.
+
+The KFP smoke step owns `suse-ai-sklearn-iris`, because its selector must follow
+the exact latest-ready KServe revision. Helm configures the agent to call that
+stable in-cluster Service.
 
 ```bash
 helm install demo ./helm/suse-ai-demo \
@@ -203,8 +255,8 @@ See [`helm/suse-ai-demo/values.yaml`](helm/suse-ai-demo/values.yaml) for all con
 | `EMBEDDING_MODEL` | `nomic-embed-text` | Embedding model |
 | `VECTOR_DB_TYPE` | `qdrant` | Vector DB backend |
 | `VECTOR_DB_URL` | `http://qdrant:6333` | Vector DB address |
-| `VECTOR_DB_COLLECTION` | `demo-docs` | Collection name |
-| `ENABLE_OTEL_CONTENT_EVENTS` | `false` | Log input/output messages as span events |
+| `VECTOR_DB_COLLECTION` | `demo_docs` | Collection name (portable across Qdrant, Milvus, and OpenSearch) |
+| `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` | `false` | Capture input/output messages and system instructions as span attributes |
 
 ### LLM Service
 
@@ -214,7 +266,7 @@ See [`helm/suse-ai-demo/values.yaml`](helm/suse-ai-demo/values.yaml) for all con
 | `LLM_BASE_URL` | `http://vllm:8000/v1` | LLM endpoint (OpenAI-compat) |
 | `LLM_MODEL` | `llama3` | LLM model name |
 | `LLM_PROVIDER` | `vllm` | Provider name for OTel attributes |
-| `ENABLE_OTEL_CONTENT_EVENTS` | `false` | Log input/output messages as span events |
+| `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` | `false` | Capture input/output messages and system instructions as span attributes |
 
 ### Agent Service
 
@@ -227,7 +279,11 @@ See [`helm/suse-ai-demo/values.yaml`](helm/suse-ai-demo/values.yaml) for all con
 | `RAG_SERVICE_ADDR` | `rag-service:50052` | RAG service gRPC address |
 | `AGENT_NAME` | `demo-agent` | Agent name for OTel attributes |
 | `AGENT_MAX_ITERATIONS` | `5` | Max LLM calls per agent request |
-| `ENABLE_OTEL_CONTENT_EVENTS` | `false` | Log input/output messages as span events |
+| `DEMO_DETERMINISTIC_TOOLS` | `true` | Enable `[demo:list-models]`, `[demo:predict]`, and `[demo:lifecycle]` |
+| `KSERVE_PREDICT_URL` | profile-local stable Service | KServe v1 prediction endpoint |
+| `MODEL_REGISTRY_URL` | Kubeflow registry Service | Model Registry base URL |
+| `MODEL_REGISTRY_BEARER_TOKEN` | `demo` | Demo Authorization header token; use a Secret outside demo environments |
+| `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` | `false` | Capture messages, system instructions, and tool arguments/results as span attributes |
 
 ### Traffic Generator
 
@@ -304,6 +360,60 @@ The RAG service uses a repository pattern for vector DB access. To add a new bac
    _REGISTRY["milvus"] = MilvusVectorStore
    ```
 3. Set `VECTOR_DB_TYPE=milvus` and the appropriate `VECTOR_DB_URL`
+
+## Open WebUI conversation traffic
+
+`traffic-gen/webui.py` sends real chats through Open WebUI 0.6.41's
+`/api/chat/completions` and `/api/chat/completed` lifecycle. It uses an ordinary
+dedicated demo user and temporary `local:` chat IDs. It does not call Ollama
+directly or use an administrator's token. Grant that user read access to the
+chosen model (or a private model alias) and test one chat before enabling traffic.
+Each attempt first lists the user's accessible models, matching the browser's
+initialization of Ollama routing after an Open WebUI worker restart.
+
+Create a private JSON file containing that user's `email` and `password`, then
+mount it using an existing Kubernetes Secret. Keep this file and the Secret's
+contents out of source control and terminal logs:
+
+```bash
+kubectl -n suse-ai-demo create secret generic webui-demo-user \
+  --from-file=credentials.json=/private/path/credentials.json
+```
+
+Use these Helm values with the existing demo release, preserving its other values:
+
+```yaml
+webuiTraffic:
+  enabled: true
+  baseUrl: http://open-webui.suse-private-ai.svc.cluster.local:80
+  model: llama3.2:latest # Or the private alias granted to the demo user.
+  existingSecret: webui-demo-user
+  intervalSeconds: 60
+  maxRetries: 1
+  streamEvery: 3
+  maxTokens: 64
+```
+
+Build the traffic image from this checkout, or set `webuiTraffic.scriptConfigMap`
+to a frozen ConfigMap containing this exact `webui.py` when using an older image.
+The optional deployment has concurrency one, bounded retries (at most three),
+a 120-second request timeout, no service-account token and a short token limit.
+Every third request streams by default. Logs record each attempt, outcome,
+duration, actual reported usage and temporary chat/message IDs; they omit
+credentials and conversation content. These IDs are not exported as metric labels.
+
+Pause/resume the optional traffic independently of the existing gateway demo:
+
+```bash
+kubectl -n suse-ai-demo scale deployment/webui-traffic --replicas=0
+kubectl -n suse-ai-demo scale deployment/webui-traffic --replicas=1
+```
+
+For local validation, run `python3 -m unittest discover -s traffic-gen/tests -v`
+and `helm lint helm/suse-ai-demo`. Actual GenAI instrumentation and endpoint
+resolution are provided by the in-process Open WebUI integration in the
+`suse-ai-observability-extension` repository; native WebUI HTTP spans alone do not
+measure Ollama token usage or create a resolved client dependency.
 
 ## License
 

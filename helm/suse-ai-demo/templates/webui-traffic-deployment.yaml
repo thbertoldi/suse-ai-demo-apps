@@ -1,0 +1,67 @@
+{{- if .Values.webuiTraffic.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: webui-traffic
+  labels:
+    app: webui-traffic
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: webui-traffic
+  template:
+    metadata:
+      labels:
+        app: webui-traffic
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: webui-traffic
+          image: "{{ .Values.trafficGen.image.repository }}:{{ .Values.trafficGen.image.tag }}"
+          imagePullPolicy: {{ .Values.trafficGen.image.pullPolicy }}
+          command: [python, /app/webui.py]
+          env:
+            - name: WEBUI_BASE_URL
+              value: {{ .Values.webuiTraffic.baseUrl | quote }}
+            - name: WEBUI_MODEL
+              value: {{ .Values.webuiTraffic.model | quote }}
+            - name: WEBUI_INTERVAL_SECONDS
+              value: {{ .Values.webuiTraffic.intervalSeconds | quote }}
+            - name: WEBUI_MAX_RETRIES
+              value: {{ .Values.webuiTraffic.maxRetries | quote }}
+            - name: WEBUI_STREAM_EVERY
+              value: {{ .Values.webuiTraffic.streamEvery | quote }}
+            - name: WEBUI_MAX_TOKENS
+              value: {{ .Values.webuiTraffic.maxTokens | quote }}
+            - name: WEBUI_CREDENTIALS_FILE
+              value: /var/run/webui/credentials.json
+            - name: PYTHONDONTWRITEBYTECODE
+              value: "1"
+          volumeMounts:
+            - name: credentials
+              mountPath: /var/run/webui
+              readOnly: true
+            {{- if .Values.webuiTraffic.scriptConfigMap }}
+            - name: script
+              mountPath: /app/webui.py
+              subPath: webui.py
+              readOnly: true
+            {{- end }}
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
+      volumes:
+        - name: credentials
+          secret:
+            secretName: {{ required "webuiTraffic.existingSecret is required" .Values.webuiTraffic.existingSecret }}
+        {{- if .Values.webuiTraffic.scriptConfigMap }}
+        - name: script
+          configMap:
+            name: {{ .Values.webuiTraffic.scriptConfigMap }}
+        {{- end }}
+{{- end }}
