@@ -63,7 +63,7 @@ def serve():
             "store": store,
             "embedding_base_url": os.environ.get("EMBEDDING_BASE_URL", "http://ollama:11434"),
             "embedding_model": os.environ.get("EMBEDDING_MODEL", "nomic-embed-text"),
-            "provider": os.environ.get("LLM_PROVIDER", "ollama"),
+            "provider": os.environ.get("EMBEDDING_PROVIDER", "ollama"),
         },
         daemon=True,
         name="seed-retry",

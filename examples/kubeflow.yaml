@@ -1,0 +1,6 @@
+# Apply only after preparing a Kubeflow profile and running demo/kubeflow.
+trafficGen:
+  enableKubeflowScenarios: true
+kubeflowPipeline:
+  rbac:
+    enabled: true

@@ -1,6 +1,7 @@
 """Database traces identify the destination without exporting connection secrets."""
 
 import importlib.util
+import os
 from pathlib import Path
 import sys
 from types import ModuleType, SimpleNamespace
@@ -30,6 +31,27 @@ class Store(module.VectorStore):
 
 
 class DatabaseEndpointsTest(unittest.TestCase):
+    def test_opensearch_tls_and_single_node_index_configuration(self):
+        package = ModuleType("opensearch_test")
+        package.__path__ = []
+        constructor = Mock()
+        modules = {"opensearch_test": package, "opensearch_test.base": module,
+                   "opensearchpy": SimpleNamespace(OpenSearch=constructor)}
+        spec = importlib.util.spec_from_file_location("opensearch_test.opensearch", ROOT / "rag-service/app/vectordb/opensearch.py")
+        implementation = importlib.util.module_from_spec(spec)
+        with patch.dict(sys.modules, modules), patch.dict(os.environ, {"OPENSEARCH_CA_CERT": "/ca/test.crt", "OPENSEARCH_INDEX_REPLICAS": "0"}):
+            spec.loader.exec_module(implementation)
+            store = implementation.OpenSearchVectorStore("https://search.invalid:9200", "docs", "user", "fixture")
+            store.create_collection(768)
+        self.assertEqual(constructor.call_args.kwargs["ca_certs"], "/ca/test.crt")
+        self.assertEqual(constructor.call_args.kwargs["http_auth"], ("user", "fixture"))
+        self.assertTrue(constructor.call_args.kwargs["verify_certs"])
+        body = constructor.return_value.indices.create.call_args.kwargs["body"]
+        self.assertEqual(body["settings"]["index"]["number_of_replicas"], 0)
+        vector = body["mappings"]["properties"]["embedding"]
+        self.assertEqual(vector["dimension"], 768)
+        self.assertEqual(vector["method"]["engine"], "lucene")
+
     def test_explicit_endpoint_and_operation_without_url_secrets(self):
         for product, port in (("milvus", 19530), ("qdrant", 6333), ("opensearch", 9200)):
             store = Store(f"https://user:password@database.example:{port}/private?token=secret", "documents")

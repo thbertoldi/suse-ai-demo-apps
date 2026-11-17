@@ -1,0 +1,22 @@
+SUSE AI Demo {{ .Chart.AppVersion }} is installed in {{ .Release.Namespace }}.
+
+Check workloads:
+  kubectl -n {{ .Release.Namespace }} get pods
+  kubectl -n {{ .Release.Namespace }} logs deployment/traffic-gen --tail=20
+
+The chart requires existing inference, embedding, vector database and Collector
+endpoints. See README.md and examples/ for prerequisites and optional profiles.
+{{- if .Values.productTraffic.enabled }}
+
+Product traffic: {{ join ", " .Values.productTraffic.scenarios }}
+{{- if gt (int .Values.productTraffic.maxRounds) 0 }}
+  kubectl -n {{ .Release.Namespace }} logs job/product-traffic
+{{- else }}
+  kubectl -n {{ .Release.Namespace }} logs deployment/product-traffic --tail=20
+{{- end }}
+{{- end }}
+{{- if .Values.training.enabled }}
+
+Training runs on {{ .Values.training.schedule }}:
+  kubectl -n {{ .Release.Namespace }} get jobs -l app=pytorch-training
+{{- end }}

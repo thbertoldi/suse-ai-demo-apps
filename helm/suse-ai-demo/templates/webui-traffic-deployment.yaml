@@ -16,9 +16,13 @@ spec:
         app: webui-traffic
     spec:
       automountServiceAccountToken: false
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: webui-traffic
-          image: "{{ .Values.trafficGen.image.repository }}:{{ .Values.trafficGen.image.tag }}"
+          image: {{ include "suse-ai-demo.image" (dict "root" . "image" .Values.trafficGen.image) | quote }}
           imagePullPolicy: {{ .Values.trafficGen.image.pullPolicy }}
           command: [python, /app/webui.py]
           env:

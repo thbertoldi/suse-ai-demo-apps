@@ -14,9 +14,13 @@ spec:
       labels:
         app: llm-service
     spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: llm-service
-          image: "{{ .Values.llmService.image.repository }}:{{ .Values.llmService.image.tag }}"
+          image: {{ include "suse-ai-demo.image" (dict "root" . "image" .Values.llmService.image) | quote }}
           imagePullPolicy: {{ .Values.llmService.image.pullPolicy }}
           ports:
             - containerPort: 50053
@@ -30,6 +34,13 @@ spec:
               value: {{ .Values.llmService.llm.model | quote }}
             - name: LLM_PROVIDER
               value: {{ .Values.llmService.llm.provider | quote }}
+            {{- if .Values.llmService.llm.existingSecret }}
+            - name: LLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.llmService.llm.existingSecret | quote }}
+                  key: {{ .Values.llmService.llm.apiKeyKey | quote }}
+            {{- end }}
             - name: OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT
               value: {{ .Values.llmService.enableContentEvents | quote }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
@@ -53,7 +64,7 @@ spec:
                 fieldRef:
                   fieldPath: spec.nodeName
             - name: OTEL_RESOURCE_ATTRIBUTES
-              value: "service.namespace={{ .Values.otel.serviceNamespace }},service.version={{ .Chart.AppVersion }},deployment.environment.name={{ .Values.otel.environment }},service.instance.id=$(POD_UID),k8s.pod.uid=$(POD_UID),k8s.pod.name=$(POD_NAME),k8s.namespace.name=$(POD_NAMESPACE),k8s.node.name=$(NODE_NAME),suse.ai.demo=true"
+              value: "service.namespace={{ .Values.otel.serviceNamespace | default .Release.Namespace }},service.version={{ .Chart.AppVersion }},deployment.environment.name={{ .Values.otel.environment }},service.instance.id=$(POD_UID),k8s.pod.uid=$(POD_UID),k8s.pod.name=$(POD_NAME),k8s.namespace.name=$(POD_NAMESPACE),k8s.node.name=$(NODE_NAME),suse.ai.demo=true"
           readinessProbe:
             grpc:
               port: 50053

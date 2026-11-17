@@ -1,0 +1,43 @@
+{{- if .Values.training.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: pytorch-training
+spec:
+  schedule: {{ .Values.training.schedule | quote }}
+  suspend: {{ .Values.training.suspend }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    metadata:
+      labels:
+        app: pytorch-training
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: {{ .Values.training.activeDeadlineSeconds }}
+      template:
+        metadata:
+          labels:
+            app: pytorch-training
+        spec:
+          automountServiceAccountToken: false
+          restartPolicy: Never
+          {{- with .Values.imagePullSecrets }}
+          imagePullSecrets:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          containers:
+            - name: training
+              image: {{ include "suse-ai-demo.image" (dict "root" . "image" .Values.training.image) | quote }}
+              imagePullPolicy: {{ .Values.training.image.pullPolicy }}
+              env:
+                - name: MLFLOW_URL
+                  value: {{ required "training.mlflow.baseUrl is required" .Values.training.mlflow.baseUrl | quote }}
+                - name: MLFLOW_EXPERIMENT
+                  value: {{ .Values.training.mlflow.experiment | quote }}
+                {{- include "suse-ai-demo.apiKeyEnv" (dict "env" "MLFLOW_TRACKING_TOKEN" "config" .Values.training.mlflow) | nindent 16 }}
+                {{- include "suse-ai-demo.otelEnv" (dict "root" . "service" "pytorch-training") | nindent 16 }}
+              resources:
+                {{- toYaml .Values.training.resources | nindent 16 }}
+{{- end }}

@@ -1,6 +1,8 @@
 import json
 import os
 import time
+from urllib.parse import urlparse
+
 import requests
 from opentelemetry import trace, metrics
 
@@ -40,14 +42,22 @@ def chat_completion(
     messages: list[dict],
     max_tokens: int = 512,
     temperature: float = 0.7,
+    api_key: str | None = None,
 ) -> dict:
+    endpoint = urlparse(base_url)
+    key = os.environ.get("LLM_API_KEY", "") if api_key is None else api_key
+    common_attrs = {
+        "gen_ai.operation.name": "chat",
+        "gen_ai.request.model": model,
+        "gen_ai.provider.name": provider,
+        "server.address": endpoint.hostname or "",
+        "server.port": endpoint.port or (443 if endpoint.scheme == "https" else 80),
+    }
     with tracer.start_as_current_span(
         f"chat {model}",
         kind=trace.SpanKind.CLIENT,
         attributes={
-            "gen_ai.operation.name": "chat",
-            "gen_ai.request.model": model,
-            "gen_ai.provider.name": provider,
+            **common_attrs,
             "gen_ai.request.max_tokens": max_tokens,
             "gen_ai.request.temperature": temperature,
         },
@@ -63,14 +73,10 @@ def chat_completion(
             span.set_attribute("gen_ai.input.messages", json.dumps(input_msgs))
 
         start_time = time.monotonic()
-        common_attrs = {
-            "gen_ai.operation.name": "chat",
-            "gen_ai.request.model": model,
-            "gen_ai.provider.name": provider,
-        }
         try:
             response = requests.post(
-                f"{base_url}/chat/completions",
+                f"{base_url.rstrip('/')}/chat/completions",
+                headers={"Authorization": f"Bearer {key}"} if key else {},
                 json={
                     "model": model,
                     "messages": messages,

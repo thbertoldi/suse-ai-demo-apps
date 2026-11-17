@@ -41,7 +41,7 @@ def create_agent(rag_channel: grpc.Channel):
     llm = ChatOpenAI(
         base_url=llm_base_url,
         model=llm_model,
-        api_key="not-needed",
+        api_key=os.environ.get("LLM_API_KEY") or "not-needed",
         temperature=0.7,
         max_tokens=512,
     )

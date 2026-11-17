@@ -1,0 +1,44 @@
+version: '3'
+
+tasks:
+  test:
+    desc: Run core, Kubeflow and real CPU training regressions in separate Python environments
+    deps: [test:core, test:kubeflow, test:training]
+
+  test:core:
+    cmds:
+      - test -x .venv-core/bin/python || uv venv --python 3.12 --seed .venv-core
+      - PYTHON=.venv-core/bin/python bash scripts/install-test-deps.sh core
+      - PYTHON=.venv-core/bin/python bash scripts/test.sh core
+
+  test:kubeflow:
+    cmds:
+      - test -x .venv-kubeflow/bin/python || uv venv --python 3.12 --seed .venv-kubeflow
+      - PYTHON=.venv-kubeflow/bin/python bash scripts/install-test-deps.sh kubeflow
+      - PYTHON=.venv-kubeflow/bin/python bash scripts/test.sh kubeflow
+
+  test:training:
+    cmds:
+      - test -x .venv-training/bin/python || uv venv --python 3.12 --seed .venv-training
+      - PYTHON=.venv-training/bin/python bash scripts/install-test-deps.sh training
+      - PYTHON=.venv-training/bin/python bash scripts/test.sh training
+
+  chart:
+    desc: Lint supported installation profiles and package the chart
+    cmds:
+      - helm lint --strict helm/suse-ai-demo
+      - helm lint --strict helm/suse-ai-demo -f examples/native-products.yaml
+      - helm lint --strict helm/suse-ai-demo -f examples/kubeflow.yaml
+      - mkdir -p dist
+      - helm package helm/suse-ai-demo --destination dist
+
+  gateway:
+    dir: gateway
+    cmds: [go test ./..., go vet ./...]
+
+  validate:
+    deps: [test, chart, gateway]
+    cmds:
+      - .venv-core/bin/python scripts/check-release.py
+      - shellcheck scripts/*.sh
+      - actionlint

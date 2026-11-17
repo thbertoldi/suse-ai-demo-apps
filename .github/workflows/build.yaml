@@ -1,15 +1,62 @@
-name: Build and Push Container Images
+name: Validate and Publish Demo Apps
 
 on:
+  pull_request:
   push:
     branches: [main]
     tags: ["v*"]
 
-env:
-  REGISTRY: ghcr.io
+permissions:
+  contents: read
 
 jobs:
+  validate:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [core, kubeflow, training]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.19.0
+      - name: Install test dependencies
+        run: bash scripts/install-test-deps.sh "${SUITE}"
+        env:
+          SUITE: ${{ matrix.suite }}
+      - name: Run regression tests
+        run: bash scripts/test.sh "${SUITE}"
+        env:
+          SUITE: ${{ matrix.suite }}
+      - name: Validate chart and release version
+        if: matrix.suite == 'core'
+        run: |
+          helm lint --strict helm/suse-ai-demo
+          helm lint --strict helm/suse-ai-demo -f examples/native-products.yaml
+          helm lint --strict helm/suse-ai-demo -f examples/kubeflow.yaml
+          python scripts/check-release.py
+          for script in scripts/*.sh; do bash -n "$script"; done
+          shellcheck scripts/*.sh
+        env:
+          RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+
+  gateway:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: gateway/go.mod
+          cache-dependency-path: gateway/go.sum
+      - run: go test ./... && go vet ./...
+        working-directory: gateway
+
   build:
+    needs: [validate, gateway]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -36,37 +83,74 @@ jobs:
           - service: iris-pipeline
             context: ./demo/kubeflow
             image: suse-ai-demo-iris-pipeline
+          - service: training
+            context: ./demo/training
+            image: suse-ai-demo-training
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
+      - uses: actions/checkout@v4
       - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
-          registry: ${{ env.REGISTRY }}
+          registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.image }}
+          images: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=sha
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build and push
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+      - uses: docker/setup-buildx-action@v3
+      - name: Build candidate
         uses: docker/build-push-action@v6
         with:
           context: ${{ matrix.context }}
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
+          load: true
+          tags: |
+            demo-smoke:${{ matrix.service }}
+            ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+      - name: Smoke-test packaged runtime
+        run: bash scripts/smoke-image.sh "$SERVICE" "demo-smoke:$SERVICE"
+        env:
+          SERVICE: ${{ matrix.service }}
+      - name: Publish verified image
+        if: github.event_name != 'pull_request'
+        run: |
+          while IFS= read -r tag; do
+            docker push "$tag"
+          done <<< "$IMAGE_TAGS"
+        env:
+          IMAGE_TAGS: ${{ steps.meta.outputs.tags }}
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.19.0
+      - name: Package chart and prepare release
+        run: |
+          mkdir -p dist
+          helm package helm/suse-ai-demo --destination dist
+          (cd dist && sha256sum ./*.tgz > SHA256SUMS)
+          gh release create "$RELEASE_TAG" dist/*.tgz dist/SHA256SUMS \
+            --verify-tag --draft --title "SUSE AI Demo Apps ${RELEASE_TAG#v}" \
+            --notes-file "docs/releases/${RELEASE_TAG}.md"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}

@@ -14,9 +14,13 @@ spec:
       labels:
         app: agent-service
     spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: agent-service
-          image: "{{ .Values.agentService.image.repository }}:{{ .Values.agentService.image.tag }}"
+          image: {{ include "suse-ai-demo.image" (dict "root" . "image" .Values.agentService.image) | quote }}
           imagePullPolicy: {{ .Values.agentService.image.pullPolicy }}
           ports:
             - containerPort: 50054
@@ -26,6 +30,7 @@ spec:
               value: "[::]:50054"
             - name: LLM_BASE_URL
               value: {{ .Values.agentService.llm.baseUrl | quote }}
+            {{- include "suse-ai-demo.apiKeyEnv" (dict "env" "LLM_API_KEY" "config" .Values.agentService.llm) | nindent 12 }}
             - name: LLM_MODEL
               value: {{ .Values.agentService.llm.model | quote }}
             - name: LLM_PROVIDER
@@ -67,7 +72,7 @@ spec:
                 fieldRef:
                   fieldPath: spec.nodeName
             - name: OTEL_RESOURCE_ATTRIBUTES
-              value: "service.namespace={{ .Values.otel.serviceNamespace }},service.version={{ .Chart.AppVersion }},deployment.environment.name={{ .Values.otel.environment }},service.instance.id=$(POD_UID),suse.ai.managed=true,suse.ai.component.type=agent,suse.ai.component.name=agent-service,k8s.pod.uid=$(POD_UID),k8s.pod.name=$(POD_NAME),k8s.namespace.name=$(POD_NAMESPACE),k8s.node.name=$(NODE_NAME),suse.ai.demo=true"
+              value: "service.namespace={{ .Values.otel.serviceNamespace | default .Release.Namespace }},service.version={{ .Chart.AppVersion }},deployment.environment.name={{ .Values.otel.environment }},service.instance.id=$(POD_UID),suse.ai.managed=true,suse.ai.component.type=agent,suse.ai.component.name=agent-service,k8s.pod.uid=$(POD_UID),k8s.pod.name=$(POD_NAME),k8s.namespace.name=$(POD_NAMESPACE),k8s.node.name=$(NODE_NAME),suse.ai.demo=true"
           readinessProbe:
             grpc:
               port: 50054
