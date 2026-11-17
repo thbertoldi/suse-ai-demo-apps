@@ -1,8 +1,13 @@
+# All image tags default to Chart.appVersion. Set digest to pin an exact image.
+# Pre-existing registry credentials in the release namespace, if needed.
+imagePullSecrets: []
+
 gateway:
   image:
     repository: ghcr.io/thbertoldi/suse-ai-demo-gateway
-    tag: latest
-    pullPolicy: Always
+    tag: ""
+    digest: ""
+    pullPolicy: IfNotPresent
   replicas: 1
   ragServiceAddr: rag-service:50052
   llmServiceAddr: llm-service:50053
@@ -18,22 +23,35 @@ gateway:
 ragService:
   image:
     repository: ghcr.io/thbertoldi/suse-ai-demo-rag-service
-    tag: latest
-    pullPolicy: Always
+    tag: ""
+    digest: ""
+    pullPolicy: IfNotPresent
   replicas: 1
   llm:
     baseUrl: http://ollama.suse-private-ai.svc.cluster.local:11434/v1
     model: llama3.2
     provider: ollama
+    existingSecret: ""
+    apiKeyKey: api-key
   embedding:
     baseUrl: http://ollama.suse-private-ai.svc.cluster.local:11434
     model: nomic-embed-text
+    provider: ollama
   vectorDb:
     type: milvus
     url: http://milvus.suse-private-ai.svc.cluster.local:19530
     collection: demo_docs
     username: ""
     password: ""
+    # Optional Secret containing username/password; takes precedence over literals.
+    existingSecret: ""
+    usernameKey: username
+    passwordKey: password
+    opensearch:
+      indexReplicas: 1
+      # ConfigMap containing the trusted OpenSearch CA. TLS verification stays on.
+      caConfigMap: ""
+      caKey: ca.crt
   enableContentEvents: "false"
   resources:
     requests:
@@ -46,13 +64,17 @@ ragService:
 llmService:
   image:
     repository: ghcr.io/thbertoldi/suse-ai-demo-llm-service
-    tag: latest
-    pullPolicy: Always
+    tag: ""
+    digest: ""
+    pullPolicy: IfNotPresent
   replicas: 1
   llm:
     baseUrl: http://ollama.suse-private-ai.svc.cluster.local:11434/v1
     model: llama3.2
     provider: ollama
+    # Optional credential for a proxy such as LiteLLM.
+    existingSecret: ""
+    apiKeyKey: api-key
   enableContentEvents: "false"
   resources:
     requests:
@@ -65,13 +87,16 @@ llmService:
 agentService:
   image:
     repository: ghcr.io/thbertoldi/suse-ai-demo-agent-service
-    tag: latest
-    pullPolicy: Always
+    tag: ""
+    digest: ""
+    pullPolicy: IfNotPresent
   replicas: 1
   llm:
     baseUrl: http://ollama.suse-private-ai.svc.cluster.local:11434/v1
     model: llama3.2
     provider: ollama
+    existingSecret: ""
+    apiKeyKey: api-key
   ragServiceAddr: rag-service:50052
   agentName: demo-agent
   maxIterations: "5"
@@ -95,11 +120,14 @@ agentService:
 trafficGen:
   image:
     repository: ghcr.io/thbertoldi/suse-ai-demo-traffic-gen
-    tag: latest
-    pullPolicy: Always
+    tag: ""
+    digest: ""
+    pullPolicy: IfNotPresent
   enabled: true
   gatewayAddr: gateway:50051
   intervalSeconds: "5"
+  # Enable only after deploying the Kubeflow lifecycle demo.
+  enableKubeflowScenarios: false
   resources:
     requests:
       cpu: 50m
@@ -127,7 +155,7 @@ kubeflowPipeline:
   # it selects only the newest ready Knative revision.
   predictionServiceName: suse-ai-sklearn-iris
   rbac:
-    enabled: true
+    enabled: false
     # KFP runs the demo steps as this service account. Grant it only the
     # namespaced KServe and credential-object permissions needed by deployment.
     serviceAccountName: default-editor
@@ -139,6 +167,74 @@ otel:
   # deliberate trade-off for in-cluster demo traffic to the collector. For non-demo use,
   # terminate TLS at the collector's OTLP receiver and switch to an https:// endpoint.
   exporterEndpoint: http://opentelemetry-collector.observability.svc.cluster.local:4317
-  serviceNamespace: suse-private-ai
+  # Empty uses the Helm release namespace. Cluster identity comes from the Collector.
+  serviceNamespace: ""
   # Reported as the deployment.environment.name resource attribute on all services.
   environment: demo
+
+# Additional RAG Deployments/Services keyed by DNS name. Each entry overrides
+# ragService values; see examples/native-products.yaml for Qdrant/OpenSearch.
+additionalRagServices: {}
+
+# Uses the RAG image, which includes app.product_traffic and its dependencies.
+productTraffic:
+  enabled: false
+  # Select only installed products: vllm, litellm-vllm, qdrant, opensearch, mlflow, mcpo.
+  scenarios: []
+  intervalSeconds: 15
+  # 0 runs continuously; a positive value exits after that many complete rounds.
+  maxRounds: 0
+  # Deadline for a finite product-traffic Job (maxRounds > 0).
+  activeDeadlineSeconds: 900
+  vllm:
+    baseUrl: ""
+    model: ""
+    existingSecret: ""
+    apiKeyKey: api-key
+  litellm:
+    baseUrl: ""
+    model: ""
+    existingSecret: ""
+    apiKeyKey: api-key
+  qdrantRagAddr: rag-qdrant:50052
+  opensearchRagAddr: rag-opensearch:50052
+  mlflow:
+    baseUrl: ""
+    experiment: native-product-traffic
+    existingSecret: ""
+    apiKeyKey: token
+  mcpo:
+    baseUrl: ""
+    existingSecret: ""
+    apiKeyKey: api-key
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+# A bounded CPU training job; requires an MLflow server serving artifacts.
+training:
+  enabled: false
+  image:
+    repository: ghcr.io/thbertoldi/suse-ai-demo-training
+    tag: ""
+    digest: ""
+    pullPolicy: IfNotPresent
+  schedule: "*/5 * * * *"
+  suspend: false
+  activeDeadlineSeconds: 300
+  mlflow:
+    baseUrl: ""
+    experiment: native-pytorch-training
+    existingSecret: ""
+    apiKeyKey: token
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi

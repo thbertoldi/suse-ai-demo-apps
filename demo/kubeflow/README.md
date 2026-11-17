@@ -145,3 +145,10 @@ tool use remains enabled.
 - **Stable Service selects the previous revision:** the smoke step must wait for
   `latestCreatedRevision == latestReadyRevision`; do not bind from only
   `latestReadyRevision` during an active rollout.
+
+The main chart now keeps Kubeflow traffic and RBAC disabled by default. After
+preparing the profile namespace and dependencies above, include
+`-f examples/kubeflow.yaml` in the demo Helm install/upgrade. Override
+`kubeflowPipeline.rbac` if your profile namespace or ServiceAccount differs.
+Release 0.2.0 uses `ghcr.io/thbertoldi/suse-ai-demo-iris-pipeline:0.2.0`;
+`IRIS_PIPELINE_IMAGE` can pin a digest for compilation.

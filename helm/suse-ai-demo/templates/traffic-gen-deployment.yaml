@@ -15,15 +15,21 @@ spec:
       labels:
         app: traffic-gen
     spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: traffic-gen
-          image: "{{ .Values.trafficGen.image.repository }}:{{ .Values.trafficGen.image.tag }}"
+          image: {{ include "suse-ai-demo.image" (dict "root" . "image" .Values.trafficGen.image) | quote }}
           imagePullPolicy: {{ .Values.trafficGen.image.pullPolicy }}
           env:
             - name: GATEWAY_ADDR
               value: {{ .Values.trafficGen.gatewayAddr | quote }}
             - name: INTERVAL_SECONDS
               value: {{ .Values.trafficGen.intervalSeconds | quote }}
+            - name: ENABLE_KUBEFLOW_SCENARIOS
+              value: {{ .Values.trafficGen.enableKubeflowScenarios | quote }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ .Values.otel.exporterEndpoint | quote }}
             - name: OTEL_SERVICE_NAME
@@ -45,7 +51,7 @@ spec:
                 fieldRef:
                   fieldPath: spec.nodeName
             - name: OTEL_RESOURCE_ATTRIBUTES
-              value: "service.namespace={{ .Values.otel.serviceNamespace }},service.version={{ .Chart.AppVersion }},deployment.environment.name={{ .Values.otel.environment }},service.instance.id=$(POD_UID),suse.ai.managed=true,suse.ai.component.type=application,suse.ai.component.name=traffic-gen,k8s.pod.uid=$(POD_UID),k8s.pod.name=$(POD_NAME),k8s.namespace.name=$(POD_NAMESPACE),k8s.node.name=$(NODE_NAME),suse.ai.demo=true"
+              value: "service.namespace={{ .Values.otel.serviceNamespace | default .Release.Namespace }},service.version={{ .Chart.AppVersion }},deployment.environment.name={{ .Values.otel.environment }},service.instance.id=$(POD_UID),suse.ai.managed=true,suse.ai.component.type=application,suse.ai.component.name=traffic-gen,k8s.pod.uid=$(POD_UID),k8s.pod.name=$(POD_NAME),k8s.namespace.name=$(POD_NAMESPACE),k8s.node.name=$(NODE_NAME),suse.ai.demo=true"
           resources:
             {{- toYaml .Values.trafficGen.resources | nindent 12 }}
 {{- end }}

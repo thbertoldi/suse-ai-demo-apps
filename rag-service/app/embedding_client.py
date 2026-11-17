@@ -1,4 +1,5 @@
 import time
+from urllib.parse import urlparse
 import requests
 from opentelemetry import trace, metrics
 
@@ -27,24 +28,23 @@ def embed(
     provider: str,
     text: str,
 ) -> list[float]:
+    endpoint = urlparse(base_url)
+    common_attrs = {
+        "gen_ai.operation.name": "embed",
+        "gen_ai.request.model": model,
+        "gen_ai.provider.name": provider,
+        "server.address": endpoint.hostname or "",
+        "server.port": endpoint.port or (443 if endpoint.scheme == "https" else 80),
+    }
     with tracer.start_as_current_span(
         f"embed {model}",
         kind=trace.SpanKind.CLIENT,
-        attributes={
-            "gen_ai.operation.name": "embed",
-            "gen_ai.request.model": model,
-            "gen_ai.provider.name": provider,
-        },
+        attributes=common_attrs,
     ) as span:
         start_time = time.monotonic()
-        common_attrs = {
-            "gen_ai.operation.name": "embed",
-            "gen_ai.request.model": model,
-            "gen_ai.provider.name": provider,
-        }
         try:
             response = requests.post(
-                f"{base_url}/api/embed",
+                f"{base_url.rstrip('/')}/api/embed",
                 json={"model": model, "input": text},
                 timeout=60,
             )

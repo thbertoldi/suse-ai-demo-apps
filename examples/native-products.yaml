@@ -1,0 +1,46 @@
+# Edit service names/models for your installation. Products are installed separately.
+# Create litellm-api and opensearch-auth Secrets and opensearch-ca ConfigMap in
+# the demo namespace first; see README.md. No credentials belong in this file.
+llmService:
+  llm:
+    baseUrl: http://litellm.suse-private-ai.svc.cluster.local:4000/v1
+    model: ollama-chat
+    provider: litellm
+    existingSecret: litellm-api
+
+additionalRagServices:
+  rag-qdrant:
+    vectorDb:
+      type: qdrant
+      url: http://qdrant.suse-private-ai.svc.cluster.local:6333
+      collection: demo_docs
+  rag-opensearch:
+    vectorDb:
+      type: opensearch
+      url: https://opensearch-cluster-master.suse-private-ai.svc.cluster.local:9200
+      collection: demo-docs
+      existingSecret: opensearch-auth
+      opensearch:
+        caConfigMap: opensearch-ca
+        # Single-node demo only; use replicas for a larger cluster.
+        indexReplicas: 0
+
+productTraffic:
+  enabled: true
+  scenarios: [vllm, litellm-vllm, qdrant, opensearch, mlflow, mcpo]
+  vllm:
+    baseUrl: http://vllm.suse-private-ai.svc.cluster.local:8000/v1
+    model: qwen-small
+  litellm:
+    baseUrl: http://litellm.suse-private-ai.svc.cluster.local:4000/v1
+    model: vllm-chat
+    existingSecret: litellm-api
+  mlflow:
+    baseUrl: http://mlflow.suse-private-ai.svc.cluster.local:5000
+  mcpo:
+    baseUrl: http://open-webui-mcpo.suse-private-ai.svc.cluster.local:8000
+
+training:
+  enabled: true
+  mlflow:
+    baseUrl: http://mlflow.suse-private-ai.svc.cluster.local:5000

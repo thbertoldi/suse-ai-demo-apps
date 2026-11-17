@@ -1,0 +1,90 @@
+{{- if .Values.productTraffic.enabled }}
+{{- $config := .Values.productTraffic }}
+{{- if not $config.scenarios }}
+{{- fail "productTraffic.scenarios must select at least one installed product" }}
+{{- end }}
+{{- range $scenario := $config.scenarios }}
+{{- if not (has $scenario (list "vllm" "litellm-vllm" "qdrant" "opensearch" "mlflow" "mcpo")) }}
+{{- fail (printf "Unknown productTraffic scenario: %s" $scenario) }}
+{{- end }}
+{{- end }}
+{{- if has "litellm-vllm" $config.scenarios }}
+{{- $_ := required "productTraffic.litellm.existingSecret is required for litellm-vllm" $config.litellm.existingSecret }}
+{{- end }}
+{{- if gt (int $config.maxRounds) 0 }}
+apiVersion: batch/v1
+kind: Job
+{{- else }}
+apiVersion: apps/v1
+kind: Deployment
+{{- end }}
+metadata:
+  name: product-traffic
+  labels:
+    app: product-traffic
+spec:
+  {{- if gt (int $config.maxRounds) 0 }}
+  backoffLimit: 0
+  activeDeadlineSeconds: {{ $config.activeDeadlineSeconds }}
+  {{- else }}
+  replicas: 1
+  selector:
+    matchLabels:
+      app: product-traffic
+  {{- end }}
+  template:
+    metadata:
+      labels:
+        app: product-traffic
+    spec:
+      {{- if gt (int $config.maxRounds) 0 }}
+      restartPolicy: Never
+      {{- end }}
+      automountServiceAccountToken: false
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: product-traffic
+          image: {{ include "suse-ai-demo.image" (dict "root" . "image" .Values.ragService.image) | quote }}
+          imagePullPolicy: {{ .Values.ragService.image.pullPolicy }}
+          command: [python, -m, app.product_traffic]
+          env:
+            - name: PRODUCT_SCENARIOS
+              value: {{ join "," $config.scenarios | quote }}
+            - name: PRODUCT_INTERVAL_SECONDS
+              value: {{ $config.intervalSeconds | quote }}
+            - name: PRODUCT_MAX_ROUNDS
+              value: {{ $config.maxRounds | quote }}
+            {{- range $name, $prefix := dict "vllm" "VLLM" "litellm" "LITELLM" }}
+            {{- $provider := index $config $name }}
+            {{- $scenario := ternary "litellm-vllm" "vllm" (eq $name "litellm") }}
+            {{- if has $scenario $config.scenarios }}
+            - name: {{ $prefix }}_BASE_URL
+              value: {{ required (printf "productTraffic.%s.baseUrl is required" $name) $provider.baseUrl | quote }}
+            - name: {{ $prefix }}_MODEL
+              value: {{ required (printf "productTraffic.%s.model is required" $name) $provider.model | quote }}
+            {{- include "suse-ai-demo.apiKeyEnv" (dict "env" (printf "%s_API_KEY" $prefix) "config" $provider) | nindent 12 }}
+            {{- end }}
+            {{- end }}
+            - name: QDRANT_RAG_ADDR
+              value: {{ $config.qdrantRagAddr | quote }}
+            - name: OPENSEARCH_RAG_ADDR
+              value: {{ $config.opensearchRagAddr | quote }}
+            {{- if has "mlflow" $config.scenarios }}
+            - name: MLFLOW_URL
+              value: {{ required "productTraffic.mlflow.baseUrl is required" $config.mlflow.baseUrl | quote }}
+            - name: MLFLOW_EXPERIMENT
+              value: {{ $config.mlflow.experiment | quote }}
+            {{- include "suse-ai-demo.apiKeyEnv" (dict "env" "MLFLOW_TRACKING_TOKEN" "config" $config.mlflow) | nindent 12 }}
+            {{- end }}
+            {{- if has "mcpo" $config.scenarios }}
+            - name: MCPO_URL
+              value: {{ required "productTraffic.mcpo.baseUrl is required" $config.mcpo.baseUrl | quote }}
+            {{- include "suse-ai-demo.apiKeyEnv" (dict "env" "MCPO_API_KEY" "config" $config.mcpo) | nindent 12 }}
+            {{- end }}
+            {{- include "suse-ai-demo.otelEnv" (dict "root" . "service" "product-traffic") | nindent 12 }}
+          resources:
+            {{- toYaml $config.resources | nindent 12 }}
+{{- end }}

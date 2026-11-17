@@ -1,23 +1,33 @@
+{{- if hasKey .Values.additionalRagServices "rag-service" }}
+{{- fail "Configure rag-service through ragService, not additionalRagServices" }}
+{{- end }}
+{{- range $name, $overrides := merge (dict "rag-service" (dict)) .Values.additionalRagServices }}
+{{- $config := mergeOverwrite (deepCopy $.Values.ragService) $overrides }}
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: rag-service
+  name: {{ $name }}
   labels:
-    app: rag-service
+    app: {{ $name }}
 spec:
-  replicas: {{ .Values.ragService.replicas }}
+  replicas: {{ $config.replicas }}
   selector:
     matchLabels:
-      app: rag-service
+      app: {{ $name }}
   template:
     metadata:
       labels:
-        app: rag-service
+        app: {{ $name }}
     spec:
+      {{- with $.Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
-        - name: rag-service
-          image: "{{ .Values.ragService.image.repository }}:{{ .Values.ragService.image.tag }}"
-          imagePullPolicy: {{ .Values.ragService.image.pullPolicy }}
+        - name: {{ $name }}
+          image: {{ include "suse-ai-demo.image" (dict "root" $ "image" $config.image) | quote }}
+          imagePullPolicy: {{ $config.image.pullPolicy }}
           ports:
             - containerPort: 50052
               protocol: TCP
@@ -25,53 +35,62 @@ spec:
             - name: GRPC_LISTEN_ADDR
               value: "[::]:50052"
             - name: LLM_BASE_URL
-              value: {{ .Values.ragService.llm.baseUrl | quote }}
+              value: {{ $config.llm.baseUrl | quote }}
+            {{- include "suse-ai-demo.apiKeyEnv" (dict "env" "LLM_API_KEY" "config" $config.llm) | nindent 12 }}
             - name: LLM_MODEL
-              value: {{ .Values.ragService.llm.model | quote }}
+              value: {{ $config.llm.model | quote }}
             - name: LLM_PROVIDER
-              value: {{ .Values.ragService.llm.provider | quote }}
+              value: {{ $config.llm.provider | quote }}
             - name: EMBEDDING_BASE_URL
-              value: {{ .Values.ragService.embedding.baseUrl | quote }}
+              value: {{ $config.embedding.baseUrl | quote }}
             - name: EMBEDDING_MODEL
-              value: {{ .Values.ragService.embedding.model | quote }}
+              value: {{ $config.embedding.model | quote }}
+            - name: EMBEDDING_PROVIDER
+              value: {{ $config.embedding.provider | quote }}
             - name: VECTOR_DB_TYPE
-              value: {{ .Values.ragService.vectorDb.type | quote }}
+              value: {{ $config.vectorDb.type | quote }}
             - name: VECTOR_DB_URL
-              value: {{ .Values.ragService.vectorDb.url | quote }}
+              value: {{ $config.vectorDb.url | quote }}
             - name: VECTOR_DB_COLLECTION
-              value: {{ .Values.ragService.vectorDb.collection | quote }}
-            {{- if .Values.ragService.vectorDb.username }}
+              value: {{ $config.vectorDb.collection | quote }}
+            {{- if $config.vectorDb.existingSecret }}
             - name: VECTOR_DB_USERNAME
-              value: {{ .Values.ragService.vectorDb.username | quote }}
-            {{- end }}
-            {{- if .Values.ragService.vectorDb.password }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $config.vectorDb.existingSecret | quote }}
+                  key: {{ $config.vectorDb.usernameKey | quote }}
             - name: VECTOR_DB_PASSWORD
-              value: {{ .Values.ragService.vectorDb.password | quote }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $config.vectorDb.existingSecret | quote }}
+                  key: {{ $config.vectorDb.passwordKey | quote }}
+            {{- else }}
+            {{- if $config.vectorDb.username }}
+            - name: VECTOR_DB_USERNAME
+              value: {{ $config.vectorDb.username | quote }}
+            {{- end }}
+            {{- if $config.vectorDb.password }}
+            - name: VECTOR_DB_PASSWORD
+              value: {{ $config.vectorDb.password | quote }}
+            {{- end }}
+            {{- end }}
+            {{- if eq $config.vectorDb.type "opensearch" }}
+            - name: OPENSEARCH_INDEX_REPLICAS
+              value: {{ $config.vectorDb.opensearch.indexReplicas | quote }}
+            {{- if $config.vectorDb.opensearch.caConfigMap }}
+            - name: OPENSEARCH_CA_CERT
+              value: /etc/opensearch-ca/ca.crt
+            {{- end }}
             {{- end }}
             - name: OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT
-              value: {{ .Values.ragService.enableContentEvents | quote }}
-            - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: {{ .Values.otel.exporterEndpoint | quote }}
-            - name: OTEL_SERVICE_NAME
-              value: "rag-service"
-            - name: POD_NAME
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.name
-            - name: POD_UID
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.uid
-            - name: POD_NAMESPACE
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.namespace
-            - name: NODE_NAME
-              valueFrom:
-                fieldRef:
-                  fieldPath: spec.nodeName
-            - name: OTEL_RESOURCE_ATTRIBUTES
-              value: "service.namespace={{ .Values.otel.serviceNamespace }},service.version={{ .Chart.AppVersion }},deployment.environment.name={{ .Values.otel.environment }},service.instance.id=$(POD_UID),suse.ai.managed=true,suse.ai.component.type=application,suse.ai.component.name=rag-service,k8s.pod.uid=$(POD_UID),k8s.pod.name=$(POD_NAME),k8s.namespace.name=$(POD_NAMESPACE),k8s.node.name=$(NODE_NAME),suse.ai.demo=true"
+              value: {{ $config.enableContentEvents | quote }}
+            {{- include "suse-ai-demo.otelEnv" (dict "root" $ "service" $name) | nindent 12 }}
+          {{- if and (eq $config.vectorDb.type "opensearch") $config.vectorDb.opensearch.caConfigMap }}
+          volumeMounts:
+            - name: opensearch-ca
+              mountPath: /etc/opensearch-ca
+              readOnly: true
+          {{- end }}
           readinessProbe:
             grpc:
               port: 50052
@@ -83,4 +102,14 @@ spec:
             initialDelaySeconds: 10
             periodSeconds: 15
           resources:
-            {{- toYaml .Values.ragService.resources | nindent 12 }}
+            {{- toYaml $config.resources | nindent 12 }}
+      {{- if and (eq $config.vectorDb.type "opensearch") $config.vectorDb.opensearch.caConfigMap }}
+      volumes:
+        - name: opensearch-ca
+          configMap:
+            name: {{ $config.vectorDb.opensearch.caConfigMap | quote }}
+            items:
+              - key: {{ $config.vectorDb.opensearch.caKey | quote }}
+                path: ca.crt
+      {{- end }}
+{{- end }}

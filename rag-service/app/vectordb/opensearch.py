@@ -1,3 +1,4 @@
+import os
 from opensearchpy import OpenSearch
 
 from opentelemetry import trace
@@ -18,6 +19,8 @@ class OpenSearchVectorStore(VectorStore):
         }
         if username and password:
             connect_kwargs["http_auth"] = (username, password)
+        if os.environ.get("OPENSEARCH_CA_CERT"):
+            connect_kwargs["ca_certs"] = os.environ["OPENSEARCH_CA_CERT"]
         self._client = OpenSearch(**connect_kwargs)
 
     def search(self, query_embedding: list[float], top_k: int = 3) -> list[Document]:
@@ -96,6 +99,7 @@ class OpenSearchVectorStore(VectorStore):
             "settings": {
                 "index": {
                     "knn": True,
+                    "number_of_replicas": int(os.environ.get("OPENSEARCH_INDEX_REPLICAS", "1")),
                 }
             },
             "mappings": {
@@ -106,7 +110,7 @@ class OpenSearchVectorStore(VectorStore):
                         "method": {
                             "name": "hnsw",
                             "space_type": "cosinesimil",
-                            "engine": "nmslib",
+                            "engine": "lucene",
                         },
                     },
                     "content": {"type": "text"},

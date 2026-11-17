@@ -3,6 +3,7 @@
 from contextlib import contextmanager
 import importlib.util
 import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
@@ -90,6 +91,41 @@ def invoke(module, operation, result, messages=None):
 
 
 class GenAIClientTests(unittest.TestCase):
+    def test_endpoints_match_on_spans_and_success_or_failure_metrics(self):
+        for path, operation in CLIENTS:
+            for url, address, port in (("https://provider.invalid/v1/", "provider.invalid", 443),
+                                       ("http://[2001:db8::1]:8080", "2001:db8::1", 8080)):
+                for failed in (False, True):
+                    with self.subTest(client=path, url=url, failed=failed), client(path) as (module, reader, exporter):
+                        usage = 12 if operation == "embed" else {"prompt_tokens": 12, "completion_tokens": 7}
+                        post = Mock(side_effect=requests.Timeout("fixture")) if failed else Mock(return_value=response(payload(operation, usage)))
+                        with patch.object(module.requests, "post", post):
+                            try:
+                                if operation == "embed":
+                                    module.embed(url, "model", "fixture", "prompt")
+                                else:
+                                    module.chat_completion(url, "model", "fixture", [{"role": "user", "content": "prompt"}])
+                            except requests.Timeout:
+                                self.assertTrue(failed)
+                        attrs = exporter.get_finished_spans()[0].attributes
+                        self.assertEqual((attrs["server.address"], attrs["server.port"]), (address, port))
+                        for sample in points(reader, DURATION) + points(reader, TOKENS):
+                            self.assertEqual((sample.attributes["server.address"], sample.attributes["server.port"]), (address, port))
+                        self.assertNotIn("//api/", post.call_args.args[0])
+                        self.assertNotIn("//chat/", post.call_args.args[0])
+
+    def test_chat_authentication_environment_override_and_opt_out(self):
+        for path, _ in CLIENTS[:2]:
+            for env_key, argument, expected in (("env-fixture", None, "env-fixture"),
+                                                ("env-fixture", "override-fixture", "override-fixture"),
+                                                ("env-fixture", "", ""), ("", None, "")):
+                with self.subTest(client=path, argument=argument), client(path) as (module, reader, exporter):
+                    with patch.dict(os.environ, {"LLM_API_KEY": env_key}), patch.object(module.requests, "post", return_value=response(payload("chat"))) as post:
+                        module.chat_completion("https://provider.invalid/v1/", "model", "fixture", [], api_key=argument)
+                    self.assertEqual(post.call_args.kwargs["headers"], {"Authorization": f"Bearer {expected}"} if expected else {})
+                    self.assertEqual(post.call_args.args[0], "https://provider.invalid/v1/chat/completions")
+                    self.assertNotIn("fixture", str({k: v for k, v in exporter.get_finished_spans()[0].attributes.items() if k != "gen_ai.provider.name"}))
+
     def test_content_capture_environment_precedence(self):
         standard = "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT"
         legacy = "ENABLE_OTEL_CONTENT_EVENTS"

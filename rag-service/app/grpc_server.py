@@ -47,6 +47,7 @@ class RAGServiceServicer(demo_pb2_grpc.RAGServiceServicer):
         self._llm_provider = os.environ.get("LLM_PROVIDER", "ollama")
         self._embedding_base_url = os.environ.get("EMBEDDING_BASE_URL", "http://ollama:11434")
         self._embedding_model = os.environ.get("EMBEDDING_MODEL", "nomic-embed-text")
+        self._embedding_provider = os.environ.get("EMBEDDING_PROVIDER", "ollama")
 
     def Retrieve(self, request, context):
         started = time.monotonic()
@@ -59,7 +60,7 @@ class RAGServiceServicer(demo_pb2_grpc.RAGServiceServicer):
             query_embedding = embed(
                 base_url=self._embedding_base_url,
                 model=self._embedding_model,
-                provider=self._llm_provider,
+                provider=self._embedding_provider,
                 text=query,
             )
 

@@ -68,6 +68,16 @@ def shutdown(signum, frame):
     running = False
 
 
+def agent_messages(enable_kubeflow: bool) -> list[str]:
+    if enable_kubeflow:
+        return AGENT_MESSAGES
+    return [
+        "Search our docs for what a Kubernetes pod is, then tell me the current time",
+        "Calculate 256 * 384 and search for information about container runtimes",
+        "What time is it right now?",
+    ]
+
+
 def main():
     service_name = os.environ.get("OTEL_SERVICE_NAME", "traffic-gen")
     resource = Resource.create({"service.name": service_name})
@@ -113,7 +123,7 @@ def main():
     query_lists = {
         "rag": RAG_QUERIES,
         "chat": CHAT_MESSAGES,
-        "agent": AGENT_MESSAGES,
+        "agent": agent_messages(os.environ.get("ENABLE_KUBEFLOW_SCENARIOS", "false").lower() == "true"),
     }
     query_indices = {"rag": 0, "chat": 0, "agent": 0}
 

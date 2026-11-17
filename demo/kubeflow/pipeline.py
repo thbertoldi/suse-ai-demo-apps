@@ -7,7 +7,7 @@ from kfp import compiler, dsl, kubernetes
 
 IMAGE = os.environ.get(
     "IRIS_PIPELINE_IMAGE",
-    "ghcr.io/thbertoldi/suse-ai-demo-iris-pipeline:latest",
+    "ghcr.io/thbertoldi/suse-ai-demo-iris-pipeline:0.2.0",
 )
 OTLP_ENDPOINT = os.environ.get(
     "OTEL_EXPORTER_OTLP_ENDPOINT",
